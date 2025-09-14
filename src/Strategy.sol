@@ -1,248 +1,379 @@
 // SPDX-License-Identifier: AGPL-3.0
-pragma solidity ^0.8.18;
+pragma solidity 0.8.23;
 
-import {BaseStrategy, ERC20} from "@tokenized-strategy/BaseStrategy.sol";
+import {BaseHealthCheck, BaseStrategy, ERC20} from "@periphery/Bases/HealthCheck/BaseHealthCheck.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
-// Import interfaces for many popular DeFi projects, or add your own!
-//import "../interfaces/<protocol>/<Interface>.sol";
+import {IAuction} from "./interfaces/IAuction.sol";
+import {
+    IPendleMarket,
+    IPendlePrincipalToken,
+    IPendleRouter,
+    IPendleStandardizedYield,
+    IPendleYieldToken,
+    PendleLimitOrderData,
+    PendleMarketState
+} from "./interfaces/IPendle.sol";
 
-/**
- * The `TokenizedStrategy` variable can be used to retrieve the strategies
- * specific storage data your contract.
- *
- *       i.e. uint256 totalAssets = TokenizedStrategy.totalAssets()
- *
- * This can not be used for write functions. Any TokenizedStrategy
- * variables that need to be updated post deployment will need to
- * come from an external call from the strategies specific `management`.
- */
+/// @title Pendle PT strategy
+/// @notice Can be used as a base for LP staking strategies
+/// @dev Treats PTs as 1:1 with the underlying asset instead of using their current market price,
+///      since we can redeem them in full at expiry
+///
+///      NOTE: new depositors are disincentivized to deposit if we sold YTs, since old depositors already acrued the profits (from selling YTs)
+///      and now they don't contribute anything to the vault, while new depositors contribute their YTs.
+///      So, this strategy should probably not be user facing (unless we plan to not sell the YTs),
+///      but used as part of a larger allocator vault that is the only depositor
+contract PendlePTStrategy is BaseHealthCheck {
 
-// NOTE: To implement permissioned functions you can use the onlyManagement, onlyEmergencyAuthorized and onlyKeepers modifiers
+    using SafeERC20 for *;
 
-contract Strategy is BaseStrategy {
-    using SafeERC20 for ERC20;
+    // ===============================================================
+    // Storage
+    // ===============================================================
 
-    constructor(
-        address _asset,
-        string memory _name
-    ) BaseStrategy(_asset, _name) {}
+    /// @notice Whether deposits are open to everyone
+    bool public openDeposits;
 
-    /*//////////////////////////////////////////////////////////////
-                NEEDED TO BE OVERRIDDEN BY STRATEGIST
-    //////////////////////////////////////////////////////////////*/
+    /// @notice Whether withdrawals are open to everyone
+    bool public openWithdrawals;
 
-    /**
-     * @dev Can deploy up to '_amount' of 'asset' in the yield source.
-     *
-     * This function is called at the end of a {deposit} or {mint}
-     * call. Meaning that unless a whitelist is implemented it will
-     * be entirely permissionless and thus can be sandwiched or otherwise
-     * manipulated.
-     *
-     * @param _amount The amount of 'asset' that the strategy can attempt
-     * to deposit in the yield source.
-     */
-    function _deployFunds(uint256 _amount) internal override {
-        // TODO: implement deposit logic EX:
-        //
-        //      lendingPool.deposit(address(asset), _amount ,0);
+    /// @notice Whether should claim YT rewards and yield
+    bool public shouldClaimYT;
+
+    /// @notice Auction contract for selling rewards
+    address public auction;
+
+    /// @notice Maximum amount of YT to market sell for SY in a single harvest
+    uint256 public maxYTToSell;
+
+    /// @notice Max base fee (in gwei) for a tend
+    uint256 public maxGasPriceToTend;
+
+    // /// @notice Minimum amount of assets required to tend
+    // uint256 public minTendThreshold;
+
+    /// @notice Addresses allowed to deposit when openDeposits is false
+    mapping(address => bool) public allowed;
+
+    // ===============================================================
+    // Constants
+    // ===============================================================
+
+    /// @notice Pendle Market
+    IPendleMarket public immutable LP;
+
+    /// @notice Pendle Yield Token
+    IPendleYieldToken public immutable YT;
+
+    /// @notice Pendle Principal Token
+    IPendlePrincipalToken public immutable PT;
+
+    /// @notice Pendle Standardized Yield Token
+    IPendleStandardizedYield public immutable SY;
+
+    /// @notice Pendle Router
+    IPendleRouter public constant ROUTER = IPendleRouter(0x888888888889758F76e7103c6CbF23ABbF58F946);
+
+    /// @notice Dust threshold
+    uint256 public constant DUST_THRESHOLD = 10_000;
+
+    /// @notice Default maximum gas price for a tend
+    uint256 private constant DEFAULT_MAX_GAS_PRICE_TO_TEND = 200 * 1e9;
+
+    /// @notice Default minimum tend threshold
+    uint256 private constant DEFAULT_MIN_TEND_THRESHOLD = 200 * 1e18;
+
+    // ===============================================================
+    // Constructor
+    // ===============================================================
+
+    /// @param _asset The underlying asset
+    /// @param _market The market address
+    /// @param _name The name
+    constructor(address _asset, address _market, string memory _name) BaseHealthCheck(_asset, _name) {
+        LP = IPendleMarket(_market);
+        require(!_isExpired(), "expired");
+
+        (SY, PT, YT) = LP.readTokens();
+        require(SY.isValidTokenOut(_asset) && SY.isValidTokenIn(_asset), "!valid");
+
+        maxGasPriceToTend = DEFAULT_MAX_GAS_PRICE_TO_TEND;
+        minTendThreshold = DEFAULT_MIN_TEND_THRESHOLD;
+
+        asset.forceApprove(address(SY), type(uint256).max);
+        SY.forceApprove(address(ROUTER), type(uint256).max);
+        YT.forceApprove(address(ROUTER), type(uint256).max);
+        // LP.forceApprove(address(ROUTER), type(uint256).max);
     }
 
-    /**
-     * @dev Should attempt to free the '_amount' of 'asset'.
-     *
-     * NOTE: The amount of 'asset' that is already loose has already
-     * been accounted for.
-     *
-     * This function is called during {withdraw} and {redeem} calls.
-     * Meaning that unless a whitelist is implemented it will be
-     * entirely permissionless and thus can be sandwiched or otherwise
-     * manipulated.
-     *
-     * Should not rely on asset.balanceOf(address(this)) calls other than
-     * for diff accounting purposes.
-     *
-     * Any difference between `_amount` and what is actually freed will be
-     * counted as a loss and passed on to the withdrawer. This means
-     * care should be taken in times of illiquidity. It may be better to revert
-     * if withdraws are simply illiquid so not to realize incorrect losses.
-     *
-     * @param _amount, The amount of 'asset' to be freed.
-     */
-    function _freeFunds(uint256 _amount) internal override {
-        // TODO: implement withdraw logic EX:
-        //
-        //      lendingPool.withdraw(address(asset), _amount);
-    }
+    // ===============================================================
+    // View functions
+    // ===============================================================
 
-    /**
-     * @dev Internal function to harvest all rewards, redeploy any idle
-     * funds and return an accurate accounting of all funds currently
-     * held by the Strategy.
-     *
-     * This should do any needed harvesting, rewards selling, accrual,
-     * redepositing etc. to get the most accurate view of current assets.
-     *
-     * NOTE: All applicable assets including loose assets should be
-     * accounted for in this function.
-     *
-     * Care should be taken when relying on oracles or swap values rather
-     * than actual amounts as all Strategy profit/loss accounting will
-     * be done based on this returned value.
-     *
-     * This can still be called post a shutdown, a strategist can check
-     * `TokenizedStrategy.isShutdown()` to decide if funds should be
-     * redeployed or simply realize any profits/losses.
-     *
-     * @return _totalAssets A trusted and accurate account for the total
-     * amount of 'asset' the strategy currently holds including idle funds.
-     */
-    function _harvestAndReport()
-        internal
-        override
-        returns (uint256 _totalAssets)
-    {
-        // TODO: Implement harvesting logic and accurate accounting EX:
-        //
-        //      if(!TokenizedStrategy.isShutdown()) {
-        //          _claimAndSellRewards();
-        //      }
-        //      _totalAssets = aToken.balanceOf(address(this)) + asset.balanceOf(address(this));
-        //
-        _totalAssets = asset.balanceOf(address(this));
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                    OPTIONAL TO OVERRIDE BY STRATEGIST
-    //////////////////////////////////////////////////////////////*/
-
-    /**
-     * @notice Gets the max amount of `asset` that can be withdrawn.
-     * @dev Defaults to an unlimited amount for any address. But can
-     * be overridden by strategists.
-     *
-     * This function will be called before any withdraw or redeem to enforce
-     * any limits desired by the strategist. This can be used for illiquid
-     * or sandwichable strategies.
-     *
-     *   EX:
-     *       return asset.balanceOf(yieldSource);
-     *
-     * This does not need to take into account the `_owner`'s share balance
-     * or conversion rates from shares to assets.
-     *
-     * @param . The address that is withdrawing from the strategy.
-     * @return . The available amount that can be withdrawn in terms of `asset`
-     */
-    function availableWithdrawLimit(
-        address /*_owner*/
-    ) public view override returns (uint256) {
-        // NOTE: Withdraw limitations such as liquidity constraints should be accounted for HERE
-        //  rather than _freeFunds in order to not count them as losses on withdraws.
-
-        // TODO: If desired implement withdraw limit logic and any needed state variables.
-
-        // EX:
-        // if(yieldSource.notShutdown()) {
-        //    return asset.balanceOf(address(this)) + asset.balanceOf(yieldSource);
-        // }
-        return asset.balanceOf(address(this));
-    }
-
-    /**
-     * @notice Gets the max amount of `asset` that an address can deposit.
-     * @dev Defaults to an unlimited amount for any address. But can
-     * be overridden by strategists.
-     *
-     * This function will be called before any deposit or mints to enforce
-     * any limits desired by the strategist. This can be used for either a
-     * traditional deposit limit or for implementing a whitelist etc.
-     *
-     *   EX:
-     *      if(isAllowed[_owner]) return super.availableDepositLimit(_owner);
-     *
-     * This does not need to take into account any conversion rates
-     * from shares to assets. But should know that any non max uint256
-     * amounts may be converted to shares. So it is recommended to keep
-     * custom amounts low enough as not to cause overflow when multiplied
-     * by `totalSupply`.
-     *
-     * @param . The address that is depositing into the strategy.
-     * @return . The available amount the `_owner` can deposit in terms of `asset`
-     *
+    /// @inheritdoc BaseStrategy
     function availableDepositLimit(
         address _owner
     ) public view override returns (uint256) {
-        TODO: If desired Implement deposit limit logic and any needed state variables .
-        
-        EX:    
-            uint256 totalAssets = TokenizedStrategy.totalAssets();
-            return totalAssets >= depositLimit ? 0 : depositLimit - totalAssets;
-    }
-    */
-
-    /**
-     * @dev Optional function for strategist to override that can
-     *  be called in between reports.
-     *
-     * If '_tend' is used tendTrigger() will also need to be overridden.
-     *
-     * This call can only be called by a permissioned role so may be
-     * through protected relays.
-     *
-     * This can be used to harvest and compound rewards, deposit idle funds,
-     * perform needed position maintenance or anything else that doesn't need
-     * a full report for.
-     *
-     *   EX: A strategy that can not deposit funds without getting
-     *       sandwiched can use the tend when a certain threshold
-     *       of idle to totalAssets has been reached.
-     *
-     * This will have no effect on PPS of the strategy till report() is called.
-     *
-     * @param _totalIdle The current amount of idle funds that are available to deploy.
-     *
-    function _tend(uint256 _totalIdle) internal override {}
-    */
-
-    /**
-     * @dev Optional trigger to override if tend() will be used by the strategy.
-     * This must be implemented if the strategy hopes to invoke _tend().
-     *
-     * @return . Should return true if tend() should be called by keeper or false if not.
-     *
-    function _tendTrigger() internal view override returns (bool) {}
-    */
-
-    /**
-     * @dev Optional function for a strategist to override that will
-     * allow management to manually withdraw deployed funds from the
-     * yield source if a strategy is shutdown.
-     *
-     * This should attempt to free `_amount`, noting that `_amount` may
-     * be more than is currently deployed.
-     *
-     * NOTE: This will not realize any profits or losses. A separate
-     * {report} will be needed in order to record any profit/loss. If
-     * a report may need to be called after a shutdown it is important
-     * to check if the strategy is shutdown during {_harvestAndReport}
-     * so that it does not simply re-deploy all funds that had been freed.
-     *
-     * EX:
-     *   if(freeAsset > 0 && !TokenizedStrategy.isShutdown()) {
-     *       depositFunds...
-     *    }
-     *
-     * @param _amount The amount of asset to attempt to free.
-     *
-    function _emergencyWithdraw(uint256 _amount) internal override {
-        TODO: If desired implement simple logic to free deployed funds.
-
-        EX:
-            _amount = min(_amount, aToken.balanceOf(address(this)));
-            _freeFunds(_amount);
+        // If deposits are open or user is allowed return max, otherwise 0
+        return openDeposits || allowed[_owner] ? type(uint256).max : 0;
     }
 
-    */
+    /// @inheritdoc BaseStrategy
+    function availableWithdrawLimit(
+        address /*_owner*/
+    ) public view override returns (uint256) {
+        // If expired return max, otherwise check if withdrawals are open
+        return _isExpired() ? type(uint256).max : (openWithdrawals ? type(uint256).max : 0);
+    }
+
+    /// @notice Get the balance of PT tokens held by the strategy
+    /// @return The balance of PT tokens held by the strategy
+    function balanceOfPT() public view returns (uint256) {
+        return PT.balanceOf(address(this));
+    }
+
+    // /// @notice Estimated total assets held by the strategy
+    // /// @dev As we're accepting only non-yield-bearing tokens, we don't care about the LP's composition nor its market price,
+    // ///      since both the PT and the SY can be redeemed 1:1 for the underlying asset at expiry
+    // /// @return Estimated total assets held by the strategy
+    // function estimatedTotalAssets() public view returns (uint256) {
+    //     // PendleMarketState memory _marketState = LP.readState(address(ROUTER));
+    //     // return SY.balanceOf(address(this)) + asset.balanceOf(address(this))
+    //     //     + (balanceOfLP() * uint256((_marketState.totalPt + _marketState.totalSy)) / uint256(_marketState.totalLp));
+    //     return asset.balanceOf(address(this)) + PT.balanceOf(address(this));
+    // }
+
+    // ===============================================================
+    // Keeper functions
+    // ===============================================================
+
+    /// @notice Kick an auction for a given token
+    /// @dev Cannot kick strategy asset or SY/PT/YT/LP
+    /// @param _token The token that's being sold
+    /// @return The available amount for bidding on in the auction
+    function kickAuction(
+        address _token
+    ) external onlyKeepers returns (uint256) {
+        require(
+            _token != address(LP) && _token != address(SY) && _token != address(PT) && _token != address(YT)
+                && _token != address(asset),
+            "!token"
+        );
+
+        address _auction = auction;
+        ERC20(_token).safeTransfer(_auction, ERC20(_token).balanceOf(address(this)));
+        return IAuction(_auction).kick(_token); // @todo -- use forceKick
+    }
+
+    // ===============================================================
+    // Management functions
+    // ===============================================================
+
+    /// @notice Allow anyone to deposit
+    /// @dev This is irreversible
+    function allowDeposits() external onlyManagement {
+        openDeposits = true;
+    }
+
+    /// @notice Allow anyone to withdraw before expiry
+    /// @dev This is irreversible
+    function allowWithdrawals() external onlyManagement {
+        openWithdrawals = true;
+    }
+
+    /// @notice Allow a specific address to deposit
+    /// @dev This is irreversible
+    /// @param _address Address to allow
+    function setAllowed(
+        address _address
+    ) external onlyManagement {
+        allowed[_address] = true;
+    }
+
+    /// @notice Set whether to claim YT rewards and yield
+    /// @param _shouldClaimYT Whether to claim YT rewards and yield
+    function setShouldClaimYT(
+        bool _shouldClaimYT
+    ) external onlyManagement {
+        shouldClaimYT = _shouldClaimYT;
+    }
+
+    /// @notice Set the maximum amount of YT to sell
+    /// @dev Used to limit the amount of YT sold in a single harvest to minimize slippage
+    /// @param _maxYTToSell Maximum amount of YT to sell in a single harvest
+    function setMaxYTToSell(
+        uint256 _maxYTToSell
+    ) external onlyManagement {
+        maxYTToSell = _maxYTToSell;
+    }
+
+    /// @notice Set the maximum gas price for tending
+    /// @param _maxGasPriceToTend New maximum gas price
+    function setMaxGasPriceToTend(
+        uint256 _maxGasPriceToTend
+    ) external onlyManagement {
+        maxGasPriceToTend = _maxGasPriceToTend;
+    }
+
+    // /// @notice Set the minimum amount of assets required to tend
+    // /// @param _minTendThreshold New minimum tend threshold
+    // function setMinTendThreshold(
+    //     uint256 _minTendThreshold
+    // ) external onlyManagement {
+    //     minTendThreshold = _minTendThreshold;
+    // }
+
+    /// @notice Update the auction address
+    /// @param _auction Address of new auction.
+    function setAuction(
+        address _auction
+    ) external onlyManagement {
+        require(IAuction(_auction).receiver() == address(this), "!receiver");
+        require(IAuction(_auction).want() == address(asset), "!want");
+        auction = _auction;
+    }
+
+    // ===============================================================
+    // Internal mutated functions
+    // ===============================================================
+
+    /// @inheritdoc BaseStrategy
+    function _deployFunds(
+        uint256 /*_amount*/
+    ) internal pure override {
+        return; // Deploy on tend to avoid getting sandwiched
+        // @todo -- mint PY
+    }
+
+    /// @inheritdoc BaseStrategy
+    function _freeFunds(
+        uint256 _amount
+    ) internal override {
+        // Free proportional share
+        uint256 _totalAssets = TokenizedStrategy.totalAssets();
+        uint256 _totalInvested = _totalAssets - asset.balanceOf(address(this));
+        uint256 _toFree = balanceOfPT() * _amount / _totalInvested;
+
+        // PT --> asset
+        _freePT(_toFree);
+    }
+
+    /// @inheritdoc BaseStrategy
+    function _harvestAndReport() internal override returns (uint256 _totalAssets) {
+        if (!TokenizedStrategy.isShutdown()) {
+            bool _isActive = !_isExpired();
+            uint256 _yt = YT.balanceOf(address(this));
+            if (_yt > DUST_THRESHOLD) {
+                if (shouldClaimYT) {
+                    // Claim any rewards or accrued interest (in SY) from the YT
+                    YT.redeemDueInterestAndRewards(
+                        address(this), // user
+                        true, // redeemInterest
+                        true // redeemRewards
+                    );
+                }
+
+                // Sell YT only if market is active
+                if (_isActive) {
+                    uint256 _maxYTToSell = maxYTToSell;
+                    if (_maxYTToSell > 0) {
+                        // Empty limit order as we control the amount with `maxYTToSell`
+                        PendleLimitOrderData memory limit;
+
+                        // YT --> SY
+                        ROUTER.swapExactYtForSy(
+                            address(this), // receiver
+                            address(LP), // market
+                            Math.min(_yt, _maxYTToSell), // exactYtIn
+                            0, // minSyOut
+                            limit
+                        );
+                    }
+                } else {
+                    // Redeem any SY that was claimed after expiry
+                    _redeemSY(SY.balanceOf(address(this)));
+                }
+            }
+
+            // If market is active, deploy all idle SY
+            if (_isActive) _deploySY();
+        }
+
+        return asset.balanceOf(address(this)) + balanceOfPT();
+    }
+
+    /// @inheritdoc BaseStrategy
+    function _emergencyWithdraw(
+        uint256 _amount
+    ) internal override {
+        _freePT(Math.min(balanceOfPT(), _amount));
+    }
+
+    /// @notice Deploy all idle SY tokens into PY
+    /// @dev Mints PY (PT/YT) while keeping the YT, which means there's no slippage
+    function _deploySY() internal {
+        uint256 _sy = SY.balanceOf(address(this));
+        if (_sy > DUST_THRESHOLD) {
+            // SY --> PT (keep YT) // @todo
+            (uint256 _lp,,) = ROUTER.addLiquiditySingleSyKeepYt(
+                address(this), // receiver
+                address(LP), // market
+                _sy, // netSyIn
+                0, // minLpOut
+                0 // minYtOut
+            );
+        }
+    }
+
+    /// @notice Free `_amount` of PT tokens into asset
+    /// @param _amount The amount of PT tokens to free
+    function _freePT(
+        uint256 _amount
+    ) internal {
+        if (_amount == 0) return;
+
+        // Empty limit order. Deal with it
+        PendleLimitOrderData memory limit;
+
+        // PT --> SY // @todo
+        (uint256 _sy,) = ROUTER.removeLiquiditySingleSy( // Redeems if expired
+            address(this), // receiver
+            address(LP), // market
+            _amount, // netLpToRemove
+            0, // minSyOut
+            limit
+        );
+
+        // SY --> asset
+        _redeemSY(_sy);
+    }
+
+    /// @notice Redeem SY tokens to asset
+    function _redeemSY(
+        uint256 _amount
+    ) internal {
+        if (_amount == 0) return;
+
+        // SY --> asset
+        SY.redeem(
+            address(this), // receiver
+            _amount, // amountSharesToRedeem
+            address(asset), // tokenOut
+            0, // minTokenOut
+            false // burnFromInternalBalance
+        );
+    }
+
+    // ===============================================================
+    // Internal view functions
+    // ===============================================================
+
+    /// @notice Check if the market has expired
+    /// @return True if the market has expired, false otherwise
+    function _isExpired() internal view returns (bool) {
+        return LP.isExpired();
+    }
+
 }

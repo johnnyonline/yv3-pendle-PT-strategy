@@ -9,6 +9,7 @@ remappings = [
     "forge-std/=lib/forge-std/src/",
     "@tokenized-strategy/=lib/tokenized-strategy/src/",
     "@periphery/=lib/tokenized-strategy-periphery/src/",
+    "@pendle-core-v2/=lib/pendle-core-v2-public/contracts/",
 ]
 
 # See more config options https://github.com/foundry-rs/foundry/tree/master/config
