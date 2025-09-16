@@ -7,6 +7,11 @@ import {Setup, ERC20, IStrategyInterface} from "./utils/Setup.sol";
 contract OperationTest is Setup {
     function setUp() public virtual override {
         super.setUp();
+
+        vm.startPrank(management);
+        strategy.allowWithdrawals();
+        strategy.setMaxYTToSell(type(uint256).max);
+        vm.stopPrank();
     }
 
     function test_setupStrategyOK() public {

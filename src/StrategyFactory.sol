@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.18;
 
-import {Strategy, ERC20} from "./Strategy.sol";
+import {PendlePTStrategy as Strategy, ERC20} from "./Strategy.sol";
 import {IStrategyInterface} from "./interfaces/IStrategyInterface.sol";
 
 contract StrategyFactory {
@@ -31,15 +31,17 @@ contract StrategyFactory {
     /**
      * @notice Deploy a new Strategy.
      * @param _asset The underlying asset for the strategy to use.
+     * @param _market The market address.
      * @return . The address of the new strategy.
      */
     function newStrategy(
         address _asset,
+        address _market,
         string calldata _name
     ) external virtual returns (address) {
         // tokenized strategies available setters.
         IStrategyInterface _newStrategy = IStrategyInterface(
-            address(new Strategy(_asset, _name))
+            address(new Strategy(_asset, _market, _name))
         );
 
         _newStrategy.setPerformanceFeeRecipient(performanceFeeRecipient);

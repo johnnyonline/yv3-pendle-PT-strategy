@@ -13,16 +13,16 @@ import {
     IPendleStandardizedYield,
     IPendleYieldToken,
     PendleLimitOrderData,
-    PendleMarketState
+    PendleSwapData,
+    PendleTokenInput
 } from "./interfaces/IPendle.sol";
 
 /// @title Pendle PT strategy
-/// @notice Can be used as a base for LP staking strategies
 /// @dev Treats PTs as 1:1 with the underlying asset instead of using their current market price,
 ///      since we can redeem them in full at expiry
 ///
 ///      NOTE: new depositors are disincentivized to deposit if we sold YTs, since old depositors already acrued the profits (from selling YTs)
-///      and now they don't contribute anything to the vault, while new depositors contribute their YTs.
+///      and now they don't contribute anything to the vault while new depositors contribute their YTs.
 ///      So, this strategy should probably not be user facing (unless we plan to not sell the YTs),
 ///      but used as part of a larger allocator vault that is the only depositor
 contract PendlePTStrategy is BaseHealthCheck {
@@ -100,11 +100,13 @@ contract PendlePTStrategy is BaseHealthCheck {
         require(SY.isValidTokenOut(_asset) && SY.isValidTokenIn(_asset), "!valid");
 
         maxGasPriceToTend = DEFAULT_MAX_GAS_PRICE_TO_TEND;
-        minTendThreshold = DEFAULT_MIN_TEND_THRESHOLD;
+        // minTendThreshold = DEFAULT_MIN_TEND_THRESHOLD;
 
-        asset.forceApprove(address(SY), type(uint256).max);
+        // asset.forceApprove(address(SY), type(uint256).max);
+        asset.forceApprove(address(ROUTER), type(uint256).max);
         SY.forceApprove(address(ROUTER), type(uint256).max);
         YT.forceApprove(address(ROUTER), type(uint256).max);
+        PT.forceApprove(address(ROUTER), type(uint256).max);
         // LP.forceApprove(address(ROUTER), type(uint256).max);
     }
 
@@ -115,7 +117,7 @@ contract PendlePTStrategy is BaseHealthCheck {
     /// @inheritdoc BaseStrategy
     function availableDepositLimit(
         address _owner
-    ) public view override returns (uint256) {
+    ) public view override returns (uint256) { // @todo -- deposit after expiry should revert. why is it allowed?
         // If deposits are open or user is allowed return max, otherwise 0
         return openDeposits || allowed[_owner] ? type(uint256).max : 0;
     }
@@ -240,11 +242,29 @@ contract PendlePTStrategy is BaseHealthCheck {
     // ===============================================================
 
     /// @inheritdoc BaseStrategy
+    /// @dev `minPyOut` is used to control slippage on the conversion of the underlying token to the
+    ///      yield bearing token (e.g. USDe --> sUSDe). So `mintPyFromToken` could be sandwiched if such conversion
+    ///      is done and has slippage. Otherwise `mintPyFromToken` should not have any slippage
+    // @todo -- clean docs
     function _deployFunds(
-        uint256 /*_amount*/
-    ) internal pure override {
-        return; // Deploy on tend to avoid getting sandwiched
-        // @todo -- mint PY
+        uint256 _amount
+    ) internal override {
+        // Empty swap data as we're not swapping anything
+        PendleSwapData memory _swapData;
+
+        // Asset --> PY
+        ROUTER.mintPyFromToken(
+            address(this), // receiver
+            address(YT), // YT
+            0, // minPyOut
+            PendleTokenInput({
+                tokenIn: address(asset),
+                netTokenIn: _amount,
+                tokenMintSy: address(asset),
+                pendleSwap: address(0),
+                swapData: _swapData
+            })
+        );
     }
 
     /// @inheritdoc BaseStrategy
@@ -292,7 +312,7 @@ contract PendlePTStrategy is BaseHealthCheck {
                         );
                     }
                 } else {
-                    // Redeem any SY that was claimed after expiry
+                    // Redeem any SY that were claimed after expiry
                     _redeemSY(SY.balanceOf(address(this)));
                 }
             }
@@ -316,13 +336,12 @@ contract PendlePTStrategy is BaseHealthCheck {
     function _deploySY() internal {
         uint256 _sy = SY.balanceOf(address(this));
         if (_sy > DUST_THRESHOLD) {
-            // SY --> PT (keep YT) // @todo
-            (uint256 _lp,,) = ROUTER.addLiquiditySingleSyKeepYt(
+            // SY --> PY
+            ROUTER.mintPyFromSy(
                 address(this), // receiver
-                address(LP), // market
+                address(YT), // YT
                 _sy, // netSyIn
-                0, // minLpOut
-                0 // minYtOut
+                0 // minPyOut
             );
         }
     }
@@ -337,11 +356,11 @@ contract PendlePTStrategy is BaseHealthCheck {
         // Empty limit order. Deal with it
         PendleLimitOrderData memory limit;
 
-        // PT --> SY // @todo
-        (uint256 _sy,) = ROUTER.removeLiquiditySingleSy( // Redeems if expired
+        // PT --> SY
+        (uint256 _sy,) = ROUTER.swapExactPtForSy( // @todo -- should revert on expired
             address(this), // receiver
             address(LP), // market
-            _amount, // netLpToRemove
+            _amount, // exactPtIn
             0, // minSyOut
             limit
         );

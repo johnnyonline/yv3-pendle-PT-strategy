@@ -4,7 +4,7 @@ pragma solidity ^0.8.18;
 import "forge-std/console2.sol";
 import {Test} from "forge-std/Test.sol";
 
-import {Strategy, ERC20} from "../../Strategy.sol";
+import {PendlePTStrategy as Strategy, ERC20} from "../../Strategy.sol";
 import {StrategyFactory} from "../../StrategyFactory.sol";
 import {IStrategyInterface} from "../../interfaces/IStrategyInterface.sol";
 
@@ -20,6 +20,16 @@ interface IFactory {
 }
 
 contract Setup is Test, IEvents {
+
+    // Contract addresses.
+    address public constant ROUTER = 0x888888888889758F76e7103c6CbF23ABbF58F946;
+    address public constant LP = 0x6d98a2b6CDbF44939362a3E99793339Ba2016aF4; // USDE-MAINNET-SEP2025
+    address public constant SY = 0xf3DbdE762E5B67FaD09d88da3dfD38A83f753FFe;
+    address public constant YT = 0x48bbbEdc4d2491cc08915D7a5c7cc8A8EdF165da;
+    address public constant PT = 0xBC6736d346a5eBC0dEbc997397912CD9b8FAe10a;
+    address public constant SD = 0x4d7164f59cf48fC4E1C3fc476FBA2E095b1fF421;
+    uint256 public constant EXPIRY = 1758758400;
+
     // Contract instances that we will use repeatedly.
     ERC20 public asset;
     IStrategyInterface public strategy;
@@ -42,18 +52,24 @@ contract Setup is Test, IEvents {
     uint256 public decimals;
     uint256 public MAX_BPS = 10_000;
 
-    // Fuzz from $0.01 of 1e6 stable coins up to 1 trillion of a 1e18 coin
-    uint256 public maxFuzzAmount = 1e30;
-    uint256 public minFuzzAmount = 10_000;
+    // Fuzz from $0.001 of 1e18 stable coins up to 10 million of a 1e18 coin
+    uint256 public maxFuzzAmount = 10_000_000 * 1e18;
+    uint256 public minFuzzAmount = 0.001 * 1e18;
 
     // Default profit max unlock time is set for 10 days
     uint256 public profitMaxUnlockTime = 10 days;
 
+    // Default accepted loss
+    uint256 public constant MAX_LOSS = 5e15; // 0.5%
+
     function setUp() public virtual {
+        uint256 _blockNumber = 23_320_905; // Caching for faster tests
+        vm.selectFork(vm.createFork(vm.envString("ETH_RPC_URL"), _blockNumber));
+
         _setTokenAddrs();
 
         // Set asset
-        asset = ERC20(tokenAddrs["DAI"]);
+        asset = ERC20(tokenAddrs["USDe"]);
 
         // Set decimals
         decimals = asset.decimals();
@@ -85,13 +101,16 @@ contract Setup is Test, IEvents {
             address(
                 strategyFactory.newStrategy(
                     address(asset),
+                    LP,
                     "Tokenized Strategy"
                 )
             )
         );
 
-        vm.prank(management);
+        vm.startPrank(management);
         _strategy.acceptManagement();
+        _strategy.setAllowed(user);
+        vm.stopPrank();
 
         return address(_strategy);
     }
@@ -163,5 +182,6 @@ contract Setup is Test, IEvents {
         tokenAddrs["USDT"] = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
         tokenAddrs["DAI"] = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
         tokenAddrs["USDC"] = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+        tokenAddrs["USDe"] = 0x4c9EDD5852cd905f086C759E8383e09bff1E68B3;
     }
 }
