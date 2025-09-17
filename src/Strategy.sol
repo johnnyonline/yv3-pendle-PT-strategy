@@ -16,7 +16,7 @@ import {
     PendleSwapData,
     PendleTokenInput
 } from "./interfaces/IPendle.sol";
-
+import "forge-std/console2.sol";
 /// @title Pendle PT strategy
 /// @dev Treats PTs as 1:1 with the underlying asset instead of using their current market price,
 ///      since we can redeem them in full at expiry
@@ -48,12 +48,6 @@ contract PendlePTStrategy is BaseHealthCheck {
     /// @notice Maximum amount of YT to market sell for SY in a single harvest
     uint256 public maxYTToSell;
 
-    /// @notice Max base fee (in gwei) for a tend
-    uint256 public maxGasPriceToTend;
-
-    // /// @notice Minimum amount of assets required to tend
-    // uint256 public minTendThreshold;
-
     /// @notice Addresses allowed to deposit when openDeposits is false
     mapping(address => bool) public allowed;
 
@@ -79,12 +73,6 @@ contract PendlePTStrategy is BaseHealthCheck {
     /// @notice Dust threshold
     uint256 public constant DUST_THRESHOLD = 10_000;
 
-    /// @notice Default maximum gas price for a tend
-    uint256 private constant DEFAULT_MAX_GAS_PRICE_TO_TEND = 200 * 1e9;
-
-    /// @notice Default minimum tend threshold
-    uint256 private constant DEFAULT_MIN_TEND_THRESHOLD = 200 * 1e18;
-
     // ===============================================================
     // Constructor
     // ===============================================================
@@ -98,9 +86,6 @@ contract PendlePTStrategy is BaseHealthCheck {
 
         (SY, PT, YT) = LP.readTokens();
         require(SY.isValidTokenOut(_asset) && SY.isValidTokenIn(_asset), "!valid");
-
-        maxGasPriceToTend = DEFAULT_MAX_GAS_PRICE_TO_TEND;
-        // minTendThreshold = DEFAULT_MIN_TEND_THRESHOLD;
 
         // asset.forceApprove(address(SY), type(uint256).max);
         asset.forceApprove(address(ROUTER), type(uint256).max);
@@ -135,17 +120,6 @@ contract PendlePTStrategy is BaseHealthCheck {
     function balanceOfPT() public view returns (uint256) {
         return PT.balanceOf(address(this));
     }
-
-    // /// @notice Estimated total assets held by the strategy
-    // /// @dev As we're accepting only non-yield-bearing tokens, we don't care about the LP's composition nor its market price,
-    // ///      since both the PT and the SY can be redeemed 1:1 for the underlying asset at expiry
-    // /// @return Estimated total assets held by the strategy
-    // function estimatedTotalAssets() public view returns (uint256) {
-    //     // PendleMarketState memory _marketState = LP.readState(address(ROUTER));
-    //     // return SY.balanceOf(address(this)) + asset.balanceOf(address(this))
-    //     //     + (balanceOfLP() * uint256((_marketState.totalPt + _marketState.totalSy)) / uint256(_marketState.totalLp));
-    //     return asset.balanceOf(address(this)) + PT.balanceOf(address(this));
-    // }
 
     // ===============================================================
     // Keeper functions
@@ -211,22 +185,6 @@ contract PendlePTStrategy is BaseHealthCheck {
         maxYTToSell = _maxYTToSell;
     }
 
-    /// @notice Set the maximum gas price for tending
-    /// @param _maxGasPriceToTend New maximum gas price
-    function setMaxGasPriceToTend(
-        uint256 _maxGasPriceToTend
-    ) external onlyManagement {
-        maxGasPriceToTend = _maxGasPriceToTend;
-    }
-
-    // /// @notice Set the minimum amount of assets required to tend
-    // /// @param _minTendThreshold New minimum tend threshold
-    // function setMinTendThreshold(
-    //     uint256 _minTendThreshold
-    // ) external onlyManagement {
-    //     minTendThreshold = _minTendThreshold;
-    // }
-
     /// @notice Update the auction address
     /// @param _auction Address of new auction.
     function setAuction(
@@ -242,15 +200,12 @@ contract PendlePTStrategy is BaseHealthCheck {
     // ===============================================================
 
     /// @inheritdoc BaseStrategy
-    /// @dev `minPyOut` is used to control slippage on the conversion of the underlying token to the
-    ///      yield bearing token (e.g. USDe --> sUSDe). So `mintPyFromToken` could be sandwiched if such conversion
-    ///      is done and has slippage. Otherwise `mintPyFromToken` should not have any slippage
-    // @todo -- clean docs
     function _deployFunds(
         uint256 _amount
     ) internal override {
         // Empty swap data as we're not swapping anything
         PendleSwapData memory _swapData;
+        console2.log("_amount", _amount);
 
         // Asset --> PY
         ROUTER.mintPyFromToken(
@@ -353,17 +308,29 @@ contract PendlePTStrategy is BaseHealthCheck {
     ) internal {
         if (_amount == 0) return;
 
-        // Empty limit order. Deal with it
-        PendleLimitOrderData memory limit;
+        // Initialize variable that stores amount of SY received from selling/redeeming PT
+        uint256 _sy;
 
-        // PT --> SY
-        (uint256 _sy,) = ROUTER.swapExactPtForSy( // @todo -- should revert on expired
-            address(this), // receiver
-            address(LP), // market
-            _amount, // exactPtIn
-            0, // minSyOut
-            limit
-        );
+        // If not expired, market sell back to asset. Otherwise redeem
+        if (!_isExpired()) {
+            // Empty limit order. Deal with it
+            PendleLimitOrderData memory limit;
+
+            // PT --> SY
+            (_sy,) = ROUTER.swapExactPtForSy(
+                address(this), // receiver
+                address(LP), // market
+                _amount, // exactPtIn
+                0, // minSyOut
+                limit
+            );
+        } else {
+            // PT must be transferred to the YT contract prior to calling `redeemPY`
+            PT.safeTransfer(address(YT), _amount);
+
+            // PT --> SY
+            _sy = YT.redeemPY(address(this));
+        }
 
         // SY --> asset
         _redeemSY(_sy);

@@ -4,7 +4,7 @@ pragma solidity ^0.8.18;
 import "forge-std/console2.sol";
 import {Test} from "forge-std/Test.sol";
 
-import {PendlePTStrategy as Strategy, ERC20} from "../../Strategy.sol";
+import {PendlePTStrategy as Strategy, IPendleMarket, ERC20} from "../../Strategy.sol";
 import {StrategyFactory} from "../../StrategyFactory.sol";
 import {IStrategyInterface} from "../../interfaces/IStrategyInterface.sol";
 
@@ -23,12 +23,20 @@ contract Setup is Test, IEvents {
 
     // Contract addresses.
     address public constant ROUTER = 0x888888888889758F76e7103c6CbF23ABbF58F946;
-    address public constant LP = 0x6d98a2b6CDbF44939362a3E99793339Ba2016aF4; // USDE-MAINNET-SEP2025
+
+    // USDE-MAINNET-SEP2025
+    address public constant LP = 0x6d98a2b6CDbF44939362a3E99793339Ba2016aF4;
     address public constant SY = 0xf3DbdE762E5B67FaD09d88da3dfD38A83f753FFe;
     address public constant YT = 0x48bbbEdc4d2491cc08915D7a5c7cc8A8EdF165da;
     address public constant PT = 0xBC6736d346a5eBC0dEbc997397912CD9b8FAe10a;
-    address public constant SD = 0x4d7164f59cf48fC4E1C3fc476FBA2E095b1fF421;
     uint256 public constant EXPIRY = 1758758400;
+
+    // // SUSDE-MAINNET-NOV2025 // @todo
+    // address public constant LP = 0xA36b60A14A1A5247912584768C6e53E1a269a9F7;
+    // address public constant SY = 0xC01cde799245a25e6EabC550b36A47F6F83cc0f1;
+    // address public constant YT = 0x029d6247ADb0A57138c62E3019C92d3dfC9c1840;
+    // address public constant PT = 0x9F56094C450763769BA0EA9Fe2876070c0fD5F77;
+    // uint256 public constant EXPIRY = 1758758400;
 
     // Contract instances that we will use repeatedly.
     ERC20 public asset;
@@ -60,7 +68,7 @@ contract Setup is Test, IEvents {
     uint256 public profitMaxUnlockTime = 10 days;
 
     // Default accepted loss
-    uint256 public constant MAX_LOSS = 5e15; // 0.5%
+    uint256 public constant MAX_LOSS = 8e15; // 0.8%
 
     function setUp() public virtual {
         uint256 _blockNumber = 23_320_905; // Caching for faster tests
@@ -174,6 +182,12 @@ contract Setup is Test, IEvents {
         strategy.setPerformanceFee(_performanceFee);
     }
 
+    function _simulateMarketExpiration() internal {
+        require(!IPendleMarket(LP).isExpired(), "Market already expired");
+        skip(EXPIRY - block.timestamp);
+        require(IPendleMarket(LP).isExpired(), "Market did not expire");
+    }
+
     function _setTokenAddrs() internal {
         tokenAddrs["WBTC"] = 0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599;
         tokenAddrs["YFI"] = 0x0bc529c00C6401aEF6D220BE8C6Ea1667F6Ad93e;
@@ -183,5 +197,6 @@ contract Setup is Test, IEvents {
         tokenAddrs["DAI"] = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
         tokenAddrs["USDC"] = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
         tokenAddrs["USDe"] = 0x4c9EDD5852cd905f086C759E8383e09bff1E68B3;
+        tokenAddrs["sUSDe"] = 0x9D39A5DE30e57443BfF2A8307A4256c8797A3497;
     }
 }

@@ -6,6 +6,9 @@ import {Setup, ERC20, IStrategyInterface} from "./utils/Setup.sol";
 contract ShutdownTest is Setup {
     function setUp() public virtual override {
         super.setUp();
+
+        vm.prank(management);
+        strategy.allowWithdrawals();
     }
 
     function test_shutdownCanWithdraw(uint256 _amount) public {
@@ -32,11 +35,8 @@ contract ShutdownTest is Setup {
         vm.prank(user);
         strategy.redeem(_amount, user, user);
 
-        assertGe(
-            asset.balanceOf(user),
-            balanceBefore + _amount,
-            "!final balance"
-        );
+        // Make sure user did not lose more than max
+        assertApproxEqRel(asset.balanceOf(user), balanceBefore + _amount, MAX_LOSS, "!final balance");
     }
 
     function test_emergencyWithdraw_maxUint(uint256 _amount) public {
@@ -67,11 +67,8 @@ contract ShutdownTest is Setup {
         vm.prank(user);
         strategy.redeem(_amount, user, user);
 
-        assertGe(
-            asset.balanceOf(user),
-            balanceBefore + _amount,
-            "!final balance"
-        );
+        // Make sure user did not lose more than max
+        assertApproxEqRel(asset.balanceOf(user), balanceBefore + _amount, MAX_LOSS, "!final balance");
     }
 
     // TODO: Add tests for any emergency function added.

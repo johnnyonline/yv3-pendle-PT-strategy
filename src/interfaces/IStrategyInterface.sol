@@ -10,8 +10,6 @@ interface IStrategyInterface is IStrategy {
     function shouldClaimYT() external view returns (bool);
     function auction() external view returns (address);
     function maxYTToSell() external view returns (uint256);
-    function maxGasPriceToTend() external view returns (uint256);
-    function minTendThreshold() external view returns (uint256);
     function allowed(
         address _address
     ) external view returns (bool);
@@ -21,8 +19,7 @@ interface IStrategyInterface is IStrategy {
     function SY() external view returns (address);
     function ROUTER() external view returns (address);
     function DUST_THRESHOLD() external view returns (uint256);
-    function balanceOfLP() external view returns (uint256);
-    function estimatedTotalAssets() external view returns (uint256);
+    function balanceOfPT() external view returns (uint256);
     function kickAuction(
         address _token
     ) external returns (uint256);
@@ -36,12 +33,6 @@ interface IStrategyInterface is IStrategy {
     ) external;
     function setMaxYTToSell(
         uint256 _maxYTToSell
-    ) external;
-    function setMaxGasPriceToTend(
-        uint256 _maxGasPriceToTend
-    ) external;
-    function setMinTendThreshold(
-        uint256 _minTendThreshold
     ) external;
     function setAuction(
         address _auction

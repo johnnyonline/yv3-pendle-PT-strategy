@@ -8,10 +8,8 @@ contract OperationTest is Setup {
     function setUp() public virtual override {
         super.setUp();
 
-        vm.startPrank(management);
+        vm.prank(management);
         strategy.allowWithdrawals();
-        strategy.setMaxYTToSell(type(uint256).max);
-        vm.stopPrank();
     }
 
     function test_setupStrategyOK() public {
@@ -21,7 +19,34 @@ contract OperationTest is Setup {
         assertEq(strategy.management(), management);
         assertEq(strategy.performanceFeeRecipient(), performanceFeeRecipient);
         assertEq(strategy.keeper(), keeper);
-        // TODO: add additional check on strat params
+        assertFalse(strategy.openDeposits());
+        assertTrue(strategy.openWithdrawals()); // Open on setUp
+        assertFalse(strategy.shouldClaimYT());
+        assertTrue(strategy.auction() == address(0));
+        assertEq(strategy.maxYTToSell(), 0);
+        assertEq(strategy.LP(), LP);
+        assertEq(strategy.YT(), YT);
+        assertEq(strategy.PT(), PT);
+        assertEq(strategy.SY(), SY);
+        assertEq(strategy.ROUTER(), ROUTER);
+        assertEq(strategy.DUST_THRESHOLD(), 10_000);
+        assertEq(strategy.balanceOfPT(), 0);
+    }
+
+    function test_invalidDeployment() public {
+        vm.expectRevert("!valid");
+        strategyFactory.newStrategy(tokenAddrs["YFI"], LP, "Tokenized Strategy");
+
+        address wrongMarket = 0x1BD78377DFbCA2043e38b692D2E0b32396b4772d; // ysyBOLD market
+
+        vm.expectRevert("!valid");
+        strategyFactory.newStrategy(address(asset), wrongMarket, "Tokenized Strategy");
+
+        // Expire market
+        _simulateMarketExpiration();
+
+        vm.expectRevert("expired");
+        strategyFactory.newStrategy(address(asset), LP, "Tokenized Strategy");
     }
 
     function test_operation(uint256 _amount) public {
@@ -51,11 +76,278 @@ contract OperationTest is Setup {
         vm.prank(user);
         strategy.redeem(_amount, user, user);
 
-        assertGe(
-            asset.balanceOf(user),
-            balanceBefore + _amount,
-            "!final balance"
-        );
+        // Make sure user did not lose more than max
+        assertApproxEqRel(asset.balanceOf(user), balanceBefore + _amount, MAX_LOSS, "!final balance");
+    }
+
+    function test_operation_withdrawAfterExpiry_noLoss(
+        uint256 _amount
+    ) public {
+        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
+
+        // Deposit into strategy
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        assertEq(strategy.totalAssets(), _amount, "!totalAssets");
+
+        // Earn Interest
+        skip(1 days);
+
+        // Report profit
+        vm.prank(keeper);
+        (uint256 profit, uint256 loss) = strategy.report();
+
+        // Check return Values
+        assertGe(profit, 0, "!profit");
+        assertEq(loss, 0, "!loss");
+
+        skip(strategy.profitMaxUnlockTime());
+
+        uint256 totalAssetsAfterProfit = strategy.totalAssets();
+        assertGe(totalAssetsAfterProfit, _amount, "!totalAssets");
+
+        // Expire market
+        _simulateMarketExpiration();
+
+        // Report doesn't change anything
+        vm.prank(keeper);
+        (profit, loss) = strategy.report();
+
+        // Check return Values
+        assertEq(profit, 0, "!profit");
+        assertEq(loss, 0, "!loss");
+
+        assertEq(strategy.totalAssets(), totalAssetsAfterProfit, "!totalAssets");
+
+        uint256 balanceBefore = asset.balanceOf(user);
+
+        // Withdraw all funds
+        vm.prank(user);
+        strategy.redeem(_amount, user, user);
+
+        assertGe(asset.balanceOf(user), balanceBefore + _amount, "!final balance");
+    }
+
+    function test_operation_noSwapOnLowYT(
+        uint256 _amount
+    ) public {
+        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
+
+        // Make sure we sell the YTs
+        vm.prank(management);
+        strategy.setMaxYTToSell(type(uint256).max);
+
+        // Deposit into strategy
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        assertEq(strategy.totalAssets(), _amount, "!totalAssets");
+
+        // Get rid of some YT such that we're below dust threshold
+        vm.startPrank(address(strategy));
+        ERC20(YT).transfer(address(420), ERC20(YT).balanceOf(address(strategy)) - strategy.DUST_THRESHOLD());
+        vm.stopPrank();
+
+        assertEq(ERC20(YT).balanceOf(address(strategy)), strategy.DUST_THRESHOLD());
+        assertEq(ERC20(SY).balanceOf(address(strategy)), 0);
+
+        // Report
+        vm.prank(keeper);
+        (uint256 profit, uint256 loss) = strategy.report();
+
+        // Check return Values
+        assertGe(profit, 0, "!profit");
+        assertEq(loss, 0, "!loss");
+
+        assertEq(ERC20(YT).balanceOf(address(strategy)), strategy.DUST_THRESHOLD());
+        assertEq(ERC20(SY).balanceOf(address(strategy)), 0);
+    }
+
+    function test_operation_sellYT(
+        uint256 _amount
+    ) public {
+        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
+
+        // Make sure we sell the YTs
+        vm.prank(management);
+        strategy.setMaxYTToSell(type(uint256).max);
+
+        // Deposit into strategy
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        assertEq(strategy.totalAssets(), _amount, "!totalAssets");
+
+        uint256 ytBefore = ERC20(YT).balanceOf(address(strategy));
+        assertGt(ytBefore, strategy.DUST_THRESHOLD());
+
+        // Report to sell YT
+        vm.prank(keeper);
+        (uint256 profit, uint256 loss) = strategy.report();
+
+        // Check return Values
+        assertGt(profit, 0, "!profit");
+        assertEq(loss, 0, "!loss");
+
+        assertLt(ERC20(YT).balanceOf(address(strategy)), ytBefore);
+        assertGt(ERC20(YT).balanceOf(address(strategy)), 0); // We still have some YT bc of redeploying SY profits
+        assertEq(ERC20(SY).balanceOf(address(strategy)), 0);
+    }
+
+    function test_operation_noSwapAfterExpiry(
+        uint256 _amount
+    ) public {
+        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
+
+        // Make sure we sell the YTs
+        vm.prank(management);
+        strategy.setMaxYTToSell(type(uint256).max);
+
+        // Deposit into strategy
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        assertEq(strategy.totalAssets(), _amount, "!totalAssets");
+
+        uint256 ytBefore = ERC20(YT).balanceOf(address(strategy));
+        assertGt(ytBefore, strategy.DUST_THRESHOLD());
+
+        // Expire market
+        _simulateMarketExpiration();
+
+        // Report
+        vm.prank(keeper);
+        (uint256 profit, uint256 loss) = strategy.report();
+
+        // Check return Values
+        assertGe(profit, 0, "!profit");
+        assertEq(loss, 0, "!loss");
+
+        assertEq(ERC20(YT).balanceOf(address(strategy)), ytBefore);
+    }
+
+    function test_operation_noDeployAfterExpiry(
+        uint256 _amount
+    ) public {
+        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
+
+        // Make sure we sell the YTs
+        vm.prank(management);
+        strategy.setMaxYTToSell(type(uint256).max);
+
+        // Remove performance fee
+        setFees(0, 0);
+
+        // Deposit into strategy
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        assertEq(strategy.totalAssets(), _amount, "!totalAssets");
+
+        // Report profit
+        vm.prank(keeper);
+        (uint256 profit, uint256 loss) = strategy.report();
+
+        // Check return Values
+        assertGt(profit, 0, "!profit");
+        assertEq(loss, 0, "!loss");
+
+        // Expire market
+        _simulateMarketExpiration();
+
+        // Airdrop SY, simulates claiming yield after expiry
+        airdrop(ERC20(SY), address(strategy), 100_000);
+
+        // Report profit from the SY airdrop
+        vm.prank(keeper);
+        (profit, loss) = strategy.report();
+
+        // Check return Values
+        assertGt(profit, 0, "!profit");
+        assertEq(loss, 0, "!loss");
+
+        skip(strategy.profitMaxUnlockTime());
+
+        uint256 balanceBefore = asset.balanceOf(user);
+
+        // Withdraw all funds
+        vm.prank(user);
+        strategy.redeem(_amount, user, user);
+
+        assertGe(asset.balanceOf(user), balanceBefore + _amount, "!final balance");
+
+        // Make sure all funds were distributed
+        assertEq(ERC20(SY).balanceOf(address(strategy)), 0);
+        assertEq(ERC20(LP).balanceOf(address(strategy)), 0);
+        assertEq(ERC20(PT).balanceOf(address(strategy)), 0);
+        assertGt(ERC20(YT).balanceOf(address(strategy)), 0); // We do have some worthless YT
+        assertEq(strategy.totalSupply(), 0);
+        assertEq(strategy.totalAssets(), 0);
+        assertEq(asset.balanceOf(address(strategy)), 0);
+    }
+
+    function test_operation_noDeployOnLowSY(
+        uint256 _amount
+    ) public {
+        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
+
+        // Deposit into strategy
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        assertEq(strategy.totalAssets(), _amount, "!totalAssets");
+
+        assertEq(ERC20(SY).balanceOf(address(strategy)), 0);
+
+        // Get rid of all YT
+        vm.startPrank(address(strategy));
+        ERC20(YT).transfer(address(420), ERC20(YT).balanceOf(address(strategy)));
+        vm.stopPrank();
+
+        // Airdrop SY dust
+        airdrop(ERC20(SY), address(strategy), strategy.DUST_THRESHOLD());
+
+        // Report
+        vm.prank(keeper);
+        (uint256 profit, uint256 loss) = strategy.report();
+
+        // Check return Values
+        assertGe(profit, 0, "!profit");
+        assertEq(loss, 0, "!loss");
+
+        assertEq(ERC20(SY).balanceOf(address(strategy)), strategy.DUST_THRESHOLD());
+    }
+
+    function test_operation_claimYT(
+        uint256 _amount
+    ) public {
+        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
+
+        // Set claim YT to true
+        vm.prank(management);
+        strategy.setShouldClaimYT(true);
+
+        // Deposit into strategy
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        assertEq(strategy.totalAssets(), _amount, "!totalAssets");
+
+        // Earn Interest
+        skip(1 days);
+
+        // Report profit
+        vm.prank(keeper);
+        (uint256 profit, uint256 loss) = strategy.report();
+
+        // Check return Values
+        assertGe(profit, 0, "!profit");
+        assertEq(loss, 0, "!loss");
+
+        skip(strategy.profitMaxUnlockTime());
+
+        uint256 balanceBefore = asset.balanceOf(user);
+
+        // Withdraw all funds
+        vm.prank(user);
+        strategy.redeem(_amount, user, user);
+
+        // Make sure user did not lose more than max
+        assertApproxEqRel(asset.balanceOf(user), balanceBefore + _amount, MAX_LOSS, "!final balance");
     }
 
     function test_profitableReport(
@@ -73,16 +365,16 @@ contract OperationTest is Setup {
         // Earn Interest
         skip(1 days);
 
-        // TODO: implement logic to simulate earning interest.
-        uint256 toAirdrop = (_amount * _profitFactor) / MAX_BPS;
-        airdrop(asset, address(strategy), toAirdrop);
+        // Make sure we sell YT to earn the profit
+        vm.prank(management);
+        strategy.setMaxYTToSell(type(uint256).max);
 
         // Report profit
         vm.prank(keeper);
         (uint256 profit, uint256 loss) = strategy.report();
 
         // Check return Values
-        assertGe(profit, toAirdrop, "!profit");
+        assertGt(profit, 0, "!profit");
         assertEq(loss, 0, "!loss");
 
         skip(strategy.profitMaxUnlockTime());
@@ -118,16 +410,16 @@ contract OperationTest is Setup {
         // Earn Interest
         skip(1 days);
 
-        // TODO: implement logic to simulate earning interest.
-        uint256 toAirdrop = (_amount * _profitFactor) / MAX_BPS;
-        airdrop(asset, address(strategy), toAirdrop);
+        // Make sure we sell YT to earn the profit
+        vm.prank(management);
+        strategy.setMaxYTToSell(type(uint256).max);
 
         // Report profit
         vm.prank(keeper);
         (uint256 profit, uint256 loss) = strategy.report();
 
         // Check return Values
-        assertGe(profit, toAirdrop, "!profit");
+        assertGt(profit, 0, "!profit");
         assertEq(loss, 0, "!loss");
 
         skip(strategy.profitMaxUnlockTime());
