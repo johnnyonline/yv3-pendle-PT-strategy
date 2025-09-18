@@ -98,16 +98,16 @@ contract PendlePTStrategy is BaseHealthCheck {
     function availableDepositLimit(
         address _owner
     ) public view override returns (uint256) {
-        // If expired return zero, otherwise check if deposits are open or user is allowed
-        return _isExpired() ? 0 : (openDeposits || allowed[_owner] ? type(uint256).max : 0);
+        // If active and deposits are open or user is allowed return max, otherwise return zero
+        return !_isExpired() && (openDeposits || allowed[_owner]) ? type(uint256).max : 0;
     }
 
     /// @inheritdoc BaseStrategy
     function availableWithdrawLimit(
         address /*_owner*/
     ) public view override returns (uint256) {
-        // If expired return max, otherwise check if withdrawals are open
-        return _isExpired() ? type(uint256).max : (openWithdrawals ? type(uint256).max : 0);
+        // If expired or withdrawals are open return max, otherwise return zero
+        return _isExpired() || openWithdrawals ? type(uint256).max : 0;
     }
 
     /// @notice Get the balance of PT tokens held by the strategy
