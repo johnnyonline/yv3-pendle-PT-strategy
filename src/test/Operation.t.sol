@@ -2,7 +2,7 @@
 pragma solidity ^0.8.18;
 
 import "forge-std/console2.sol";
-import {Setup, ERC20, IStrategyInterface} from "./utils/Setup.sol";
+import {Setup, ERC20} from "./utils/Setup.sol";
 
 contract OperationTest is Setup {
     function setUp() public virtual override {
@@ -315,6 +315,7 @@ contract OperationTest is Setup {
 
         // Earn Interest
         skip(1 days);
+        vm.roll(block.number + 1); // Roll so PY index can update
 
         // Report profit
         vm.prank(keeper);
@@ -334,6 +335,20 @@ contract OperationTest is Setup {
 
         // Make sure user did not lose more than max
         assertApproxEqRel(asset.balanceOf(user), balanceBefore + _amount, MAX_LOSS, "!final balance");
+    }
+
+    function test_operation_depositAfterExpiry(uint256 _amount) public {
+        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
+
+        // Expire market
+        _simulateMarketExpiration();
+
+        // Airdrop some asset to user
+        airdrop(asset, user, _amount);
+
+        vm.prank(user);
+        vm.expectRevert("ERC4626: deposit more than max");
+        strategy.deposit(_amount, user);
     }
 
     function test_profitableReport(uint256 _amount, uint16 _profitFactor) public {

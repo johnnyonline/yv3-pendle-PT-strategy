@@ -13,7 +13,7 @@ contract StrategyFactory {
     address public performanceFeeRecipient;
     address public keeper;
 
-    /// @notice Track the deployments. asset => pool => strategy
+    /// @notice Track the deployments. Pendle market => strategy
     mapping(address => address) public deployments;
 
     constructor(address _management, address _performanceFeeRecipient, address _keeper, address _emergencyAdmin) {
@@ -43,7 +43,7 @@ contract StrategyFactory {
 
         emit NewStrategy(address(_newStrategy), _asset);
 
-        deployments[_asset] = address(_newStrategy);
+        deployments[_market] = address(_newStrategy);
         return address(_newStrategy);
     }
 
@@ -54,8 +54,7 @@ contract StrategyFactory {
         keeper = _keeper;
     }
 
-    function isDeployedStrategy(address _strategy) external view returns (bool) {
-        address _asset = IStrategyInterface(_strategy).asset();
-        return deployments[_asset] == _strategy;
+    function isDeployedStrategy(address _market) external view returns (bool) {
+        return deployments[_market] != address(0);
     }
 }

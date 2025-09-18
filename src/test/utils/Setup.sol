@@ -30,12 +30,19 @@ contract Setup is Test, IEvents {
     address public constant PT = 0xBC6736d346a5eBC0dEbc997397912CD9b8FAe10a;
     uint256 public constant EXPIRY = 1758758400;
 
-    // // SUSDE-MAINNET-NOV2025 // @todo
-    // address public constant LP = 0xA36b60A14A1A5247912584768C6e53E1a269a9F7;
-    // address public constant SY = 0xC01cde799245a25e6EabC550b36A47F6F83cc0f1;
-    // address public constant YT = 0x029d6247ADb0A57138c62E3019C92d3dfC9c1840;
-    // address public constant PT = 0x9F56094C450763769BA0EA9Fe2876070c0fD5F77;
-    // uint256 public constant EXPIRY = 1758758400;
+    // // USDAF-MAINNET-NOV2025
+    // address public constant LP = 0x8Bf03ACbF1C2aC2e487c80678De7873C954525D2;
+    // address public constant SY = 0x6FC5b9eEBf6f19556DB8C8Fdcc8D4a52E6Dc106D;
+    // address public constant YT = 0xfAC0A88f74570478367Ba1a52b4a30cfeC6eC431;
+    // address public constant PT = 0x9B02ca5685E9C332b158c01459562a161c8e8ADf;
+    // uint256 public constant EXPIRY = 1762992000;
+
+    // // SUSDAF-MAINNET-NOV2025
+    // address public constant LP = 0x233f5adf236CAB22C5DbDD3333a7EfD8267d7AEE;
+    // address public constant SY = 0xb81a3526793A6f7D0201e00F40f4e58Cc9CD9025;
+    // address public constant YT = 0x4E99312E0beba4d73D8E8E9368FD24F4670624D9;
+    // address public constant PT = 0xA3CA92a69c6809607837bc3BD6B13e4c1E1e8aE9;
+    // uint256 public constant EXPIRY = 1762992000;
 
     // Contract instances that we will use repeatedly.
     ERC20 public asset;
@@ -67,7 +74,7 @@ contract Setup is Test, IEvents {
     uint256 public profitMaxUnlockTime = 10 days;
 
     // Default accepted loss
-    uint256 public constant MAX_LOSS = 8e15; // 0.8%
+    uint256 public constant MAX_LOSS = 1e16; // 1%
 
     function setUp() public virtual {
         uint256 _blockNumber = 23_320_905; // Caching for faster tests
@@ -174,6 +181,6 @@ contract Setup is Test, IEvents {
         tokenAddrs["DAI"] = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
         tokenAddrs["USDC"] = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
         tokenAddrs["USDe"] = 0x4c9EDD5852cd905f086C759E8383e09bff1E68B3;
-        tokenAddrs["sUSDe"] = 0x9D39A5DE30e57443BfF2A8307A4256c8797A3497;
+        tokenAddrs["USDaf"] = 0x9Cf12ccd6020b6888e4D4C4e4c7AcA33c1eB91f8;
     }
 }

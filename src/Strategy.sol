@@ -16,15 +16,6 @@ import {
     PendleSwapData,
     PendleTokenInput
 } from "./interfaces/IPendle.sol";
-import "forge-std/console2.sol";
-/// @title Pendle PT strategy
-/// @dev Treats PTs as 1:1 with the underlying asset instead of using their current market price,
-///      since we can redeem them in full at expiry
-///
-///      NOTE: new depositors are disincentivized to deposit if we sold YTs, since old depositors already acrued the profits (from selling YTs)
-///      and now they don't contribute anything to the vault while new depositors contribute their YTs.
-///      So, this strategy should probably not be user facing (unless we plan to not sell the YTs),
-///      but used as part of a larger allocator vault that is the only depositor
 
 contract PendlePTStrategy is BaseHealthCheck {
     using SafeERC20 for *;
@@ -46,6 +37,11 @@ contract PendlePTStrategy is BaseHealthCheck {
     address public auction;
 
     /// @notice Maximum amount of YT to market sell for SY in a single harvest
+    /// @dev Selling YTs realizes yield that otherwise may accrue to depositors over time.
+    ///       By selling YTs, the vault captures potential future yield upfront.
+    ///       This can disadvantage new depositors, since past depositors already benefited
+    ///       from the realized gains, while new depositors contribute fresh YTs without sharing
+    ///       in those prior benefits
     uint256 public maxYTToSell;
 
     /// @notice Addresses allowed to deposit when openDeposits is false
@@ -87,12 +83,10 @@ contract PendlePTStrategy is BaseHealthCheck {
         (SY, PT, YT) = LP.readTokens();
         require(SY.isValidTokenOut(_asset) && SY.isValidTokenIn(_asset), "!valid");
 
-        // asset.forceApprove(address(SY), type(uint256).max);
         asset.forceApprove(address(ROUTER), type(uint256).max);
         SY.forceApprove(address(ROUTER), type(uint256).max);
         YT.forceApprove(address(ROUTER), type(uint256).max);
         PT.forceApprove(address(ROUTER), type(uint256).max);
-        // LP.forceApprove(address(ROUTER), type(uint256).max);
     }
 
     // ===============================================================
@@ -101,9 +95,8 @@ contract PendlePTStrategy is BaseHealthCheck {
 
     /// @inheritdoc BaseStrategy
     function availableDepositLimit(address _owner) public view override returns (uint256) {
-        // @todo -- deposit after expiry should revert. why is it allowed?
-        // If deposits are open or user is allowed return max, otherwise 0
-        return openDeposits || allowed[_owner] ? type(uint256).max : 0;
+        // If expired return zero, otherwise check if deposits are open or user is allowed
+        return _isExpired() ? 0 : (openDeposits || allowed[_owner] ? type(uint256).max : 0);
     }
 
     /// @inheritdoc BaseStrategy
@@ -135,7 +128,7 @@ contract PendlePTStrategy is BaseHealthCheck {
 
         address _auction = auction;
         ERC20(_token).safeTransfer(_auction, ERC20(_token).balanceOf(address(this)));
-        return IAuction(_auction).kick(_token); // @todo -- use forceKick
+        return IAuction(_auction).kick(_token);
     }
 
     // ===============================================================
@@ -190,7 +183,6 @@ contract PendlePTStrategy is BaseHealthCheck {
     function _deployFunds(uint256 _amount) internal override {
         // Empty swap data as we're not swapping anything
         PendleSwapData memory _swapData;
-        console2.log("_amount", _amount);
 
         // Asset --> PY
         ROUTER.mintPyFromToken(
