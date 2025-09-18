@@ -305,7 +305,7 @@ contract PendlePTStrategy is BaseHealthCheck {
         // Initialize variable that stores amount of SY received from selling/redeeming PT
         uint256 _sy;
 
-        // If not expired, market sell back to asset. Otherwise redeem
+        // If active, market sell for SY. Otherwise redeem
         if (!_isExpired()) {
             // Empty limit order. Deal with it
             PendleLimitOrderData memory limit;
