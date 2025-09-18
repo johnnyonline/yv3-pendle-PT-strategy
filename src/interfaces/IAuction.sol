@@ -2,7 +2,11 @@
 pragma solidity 0.8.23;
 
 interface IAuction {
+
     function want() external view returns (address);
     function receiver() external view returns (address);
-    function kick(address _token) external returns (uint256);
+    function kick(
+        address _token
+    ) external returns (uint256);
+
 }

@@ -12,14 +12,21 @@ import {IStrategyInterface} from "../../interfaces/IStrategyInterface.sol";
 import {IEvents} from "@tokenized-strategy/interfaces/IEvents.sol";
 
 interface IFactory {
+
     function governance() external view returns (address);
 
-    function set_protocol_fee_bps(uint16) external;
+    function set_protocol_fee_bps(
+        uint16
+    ) external;
 
-    function set_protocol_fee_recipient(address) external;
+    function set_protocol_fee_recipient(
+        address
+    ) external;
+
 }
 
 contract Setup is Test, IEvents {
+
     // Contract addresses.
     address public constant ROUTER = 0x888888888889758F76e7103c6CbF23ABbF58F946;
 
@@ -183,4 +190,5 @@ contract Setup is Test, IEvents {
         tokenAddrs["USDe"] = 0x4c9EDD5852cd905f086C759E8383e09bff1E68B3;
         tokenAddrs["USDaf"] = 0x9Cf12ccd6020b6888e4D4C4e4c7AcA33c1eB91f8;
     }
+
 }

@@ -5,6 +5,7 @@ import {PendlePTStrategy as Strategy, ERC20} from "./Strategy.sol";
 import {IStrategyInterface} from "./interfaces/IStrategyInterface.sol";
 
 contract StrategyFactory {
+
     event NewStrategy(address indexed strategy, address indexed asset);
 
     address public immutable emergencyAdmin;
@@ -54,7 +55,10 @@ contract StrategyFactory {
         keeper = _keeper;
     }
 
-    function isDeployedStrategy(address _market) external view returns (bool) {
+    function isDeployedStrategy(
+        address _market
+    ) external view returns (bool) {
         return deployments[_market] != address(0);
     }
+
 }

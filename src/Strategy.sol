@@ -18,6 +18,7 @@ import {
 } from "./interfaces/IPendle.sol";
 
 contract PendlePTStrategy is BaseHealthCheck {
+
     using SafeERC20 for *;
 
     // ===============================================================
@@ -94,13 +95,17 @@ contract PendlePTStrategy is BaseHealthCheck {
     // ===============================================================
 
     /// @inheritdoc BaseStrategy
-    function availableDepositLimit(address _owner) public view override returns (uint256) {
+    function availableDepositLimit(
+        address _owner
+    ) public view override returns (uint256) {
         // If expired return zero, otherwise check if deposits are open or user is allowed
         return _isExpired() ? 0 : (openDeposits || allowed[_owner] ? type(uint256).max : 0);
     }
 
     /// @inheritdoc BaseStrategy
-    function availableWithdrawLimit(address /*_owner*/ ) public view override returns (uint256) {
+    function availableWithdrawLimit(
+        address /*_owner*/
+    ) public view override returns (uint256) {
         // If expired return max, otherwise check if withdrawals are open
         return _isExpired() ? type(uint256).max : (openWithdrawals ? type(uint256).max : 0);
     }
@@ -119,7 +124,9 @@ contract PendlePTStrategy is BaseHealthCheck {
     /// @dev Cannot kick strategy asset or SY/PT/YT/LP
     /// @param _token The token that's being sold
     /// @return The available amount for bidding on in the auction
-    function kickAuction(address _token) external onlyKeepers returns (uint256) {
+    function kickAuction(
+        address _token
+    ) external onlyKeepers returns (uint256) {
         require(
             _token != address(LP) && _token != address(SY) && _token != address(PT) && _token != address(YT)
                 && _token != address(asset),
@@ -150,26 +157,34 @@ contract PendlePTStrategy is BaseHealthCheck {
     /// @notice Allow a specific address to deposit
     /// @dev This is irreversible
     /// @param _address Address to allow
-    function setAllowed(address _address) external onlyManagement {
+    function setAllowed(
+        address _address
+    ) external onlyManagement {
         allowed[_address] = true;
     }
 
     /// @notice Set whether to claim YT rewards and yield
     /// @param _shouldClaimYT Whether to claim YT rewards and yield
-    function setShouldClaimYT(bool _shouldClaimYT) external onlyManagement {
+    function setShouldClaimYT(
+        bool _shouldClaimYT
+    ) external onlyManagement {
         shouldClaimYT = _shouldClaimYT;
     }
 
     /// @notice Set the maximum amount of YT to sell
     /// @dev Used to limit the amount of YT sold in a single harvest to minimize slippage
     /// @param _maxYTToSell Maximum amount of YT to sell in a single harvest
-    function setMaxYTToSell(uint256 _maxYTToSell) external onlyManagement {
+    function setMaxYTToSell(
+        uint256 _maxYTToSell
+    ) external onlyManagement {
         maxYTToSell = _maxYTToSell;
     }
 
     /// @notice Update the auction address
     /// @param _auction Address of new auction.
-    function setAuction(address _auction) external onlyManagement {
+    function setAuction(
+        address _auction
+    ) external onlyManagement {
         require(IAuction(_auction).receiver() == address(this), "!receiver");
         require(IAuction(_auction).want() == address(asset), "!want");
         auction = _auction;
@@ -180,7 +195,9 @@ contract PendlePTStrategy is BaseHealthCheck {
     // ===============================================================
 
     /// @inheritdoc BaseStrategy
-    function _deployFunds(uint256 _amount) internal override {
+    function _deployFunds(
+        uint256 _amount
+    ) internal override {
         // Empty swap data as we're not swapping anything
         PendleSwapData memory _swapData;
 
@@ -200,7 +217,9 @@ contract PendlePTStrategy is BaseHealthCheck {
     }
 
     /// @inheritdoc BaseStrategy
-    function _freeFunds(uint256 _amount) internal override {
+    function _freeFunds(
+        uint256 _amount
+    ) internal override {
         // Free proportional share
         uint256 _totalAssets = TokenizedStrategy.totalAssets();
         uint256 _totalInvested = _totalAssets - asset.balanceOf(address(this));
@@ -255,7 +274,9 @@ contract PendlePTStrategy is BaseHealthCheck {
     }
 
     /// @inheritdoc BaseStrategy
-    function _emergencyWithdraw(uint256 _amount) internal override {
+    function _emergencyWithdraw(
+        uint256 _amount
+    ) internal override {
         _freePT(Math.min(balanceOfPT(), _amount));
     }
 
@@ -276,7 +297,9 @@ contract PendlePTStrategy is BaseHealthCheck {
 
     /// @notice Free `_amount` of PT tokens into asset
     /// @param _amount The amount of PT tokens to free
-    function _freePT(uint256 _amount) internal {
+    function _freePT(
+        uint256 _amount
+    ) internal {
         if (_amount == 0) return;
 
         // Initialize variable that stores amount of SY received from selling/redeeming PT
@@ -308,7 +331,9 @@ contract PendlePTStrategy is BaseHealthCheck {
     }
 
     /// @notice Redeem SY tokens to asset
-    function _redeemSY(uint256 _amount) internal {
+    function _redeemSY(
+        uint256 _amount
+    ) internal {
         if (_amount == 0) return;
 
         // SY --> asset
@@ -330,4 +355,5 @@ contract PendlePTStrategy is BaseHealthCheck {
     function _isExpired() internal view returns (bool) {
         return LP.isExpired();
     }
+
 }

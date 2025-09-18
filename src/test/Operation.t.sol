@@ -5,6 +5,7 @@ import "forge-std/console2.sol";
 import {Setup, ERC20} from "./utils/Setup.sol";
 
 contract OperationTest is Setup {
+
     function setUp() public virtual override {
         super.setUp();
 
@@ -49,7 +50,9 @@ contract OperationTest is Setup {
         strategyFactory.newStrategy(address(asset), LP, "Tokenized Strategy");
     }
 
-    function test_operation(uint256 _amount) public {
+    function test_operation(
+        uint256 _amount
+    ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
 
         // Deposit into strategy
@@ -80,7 +83,9 @@ contract OperationTest is Setup {
         assertApproxEqRel(asset.balanceOf(user), balanceBefore + _amount, MAX_LOSS, "!final balance");
     }
 
-    function test_operation_withdrawAfterExpiry_noLoss(uint256 _amount) public {
+    function test_operation_withdrawAfterExpiry_noLoss(
+        uint256 _amount
+    ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
 
         // Deposit into strategy
@@ -126,7 +131,9 @@ contract OperationTest is Setup {
         assertGe(asset.balanceOf(user), balanceBefore + _amount, "!final balance");
     }
 
-    function test_operation_noSwapOnLowYT(uint256 _amount) public {
+    function test_operation_noSwapOnLowYT(
+        uint256 _amount
+    ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
 
         // Make sure we sell the YTs
@@ -158,7 +165,9 @@ contract OperationTest is Setup {
         assertEq(ERC20(SY).balanceOf(address(strategy)), 0);
     }
 
-    function test_operation_sellYT(uint256 _amount) public {
+    function test_operation_sellYT(
+        uint256 _amount
+    ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
 
         // Make sure we sell the YTs
@@ -186,7 +195,9 @@ contract OperationTest is Setup {
         assertEq(ERC20(SY).balanceOf(address(strategy)), 0);
     }
 
-    function test_operation_noSwapAfterExpiry(uint256 _amount) public {
+    function test_operation_noSwapAfterExpiry(
+        uint256 _amount
+    ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
 
         // Make sure we sell the YTs
@@ -215,7 +226,9 @@ contract OperationTest is Setup {
         assertEq(ERC20(YT).balanceOf(address(strategy)), ytBefore);
     }
 
-    function test_operation_noDeployAfterExpiry(uint256 _amount) public {
+    function test_operation_noDeployAfterExpiry(
+        uint256 _amount
+    ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
 
         // Make sure we sell the YTs
@@ -272,7 +285,9 @@ contract OperationTest is Setup {
         assertEq(asset.balanceOf(address(strategy)), 0);
     }
 
-    function test_operation_noDeployOnLowSY(uint256 _amount) public {
+    function test_operation_noDeployOnLowSY(
+        uint256 _amount
+    ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
 
         // Deposit into strategy
@@ -301,7 +316,9 @@ contract OperationTest is Setup {
         assertEq(ERC20(SY).balanceOf(address(strategy)), strategy.DUST_THRESHOLD());
     }
 
-    function test_operation_claimYT(uint256 _amount) public {
+    function test_operation_claimYT(
+        uint256 _amount
+    ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
 
         // Set claim YT to true
@@ -337,7 +354,9 @@ contract OperationTest is Setup {
         assertApproxEqRel(asset.balanceOf(user), balanceBefore + _amount, MAX_LOSS, "!final balance");
     }
 
-    function test_operation_depositAfterExpiry(uint256 _amount) public {
+    function test_operation_depositAfterExpiry(
+        uint256 _amount
+    ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
 
         // Expire market
@@ -436,7 +455,9 @@ contract OperationTest is Setup {
         assertGe(asset.balanceOf(performanceFeeRecipient), expectedShares, "!perf fee out");
     }
 
-    function test_tendTrigger(uint256 _amount) public {
+    function test_tendTrigger(
+        uint256 _amount
+    ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
 
         (bool trigger,) = strategy.tendTrigger();
@@ -472,4 +493,5 @@ contract OperationTest is Setup {
         (trigger,) = strategy.tendTrigger();
         assertTrue(!trigger);
     }
+
 }
