@@ -370,6 +370,59 @@ contract OperationTest is Setup {
         strategy.deposit(_amount, user);
     }
 
+    function test_operation_freeProportionalShare(
+        uint256 _amount
+    ) public {
+        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
+
+        address patientUser = address(42069);
+
+        // Allow patientUser to deposit
+        vm.prank(management);
+        strategy.setAllowed(patientUser);
+
+        // Deposit into strategy
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        // Deposit into strategy for patientUser
+        mintAndDepositIntoStrategy(strategy, patientUser, _amount);
+
+        assertEq(strategy.totalAssets(), _amount * 2, "!totalAssets");
+
+        // Earn Interest
+        skip(1 days);
+
+        // Report profit
+        vm.prank(keeper);
+        (uint256 profit, uint256 loss) = strategy.report();
+
+        // Check return Values
+        assertGe(profit, 0, "!profit");
+        assertEq(loss, 0, "!loss");
+
+        skip(strategy.profitMaxUnlockTime());
+
+        uint256 balanceBefore = asset.balanceOf(user);
+
+        // Withdraw all funds
+        vm.prank(user);
+        strategy.redeem(_amount, user, user);
+
+        // Make sure user did not lose more than max
+        assertApproxEqRel(asset.balanceOf(user), balanceBefore + _amount, MAX_LOSS, "!final balance");
+
+        // Expire market
+        _simulateMarketExpiration();
+
+        balanceBefore = asset.balanceOf(patientUser);
+
+        // Withdraw all funds
+        vm.prank(patientUser);
+        strategy.redeem(_amount, patientUser, patientUser);
+
+        assertEq(asset.balanceOf(patientUser), balanceBefore + _amount, "!final balance patientUser");
+    }
+
     function test_profitableReport(uint256 _amount, uint16 _profitFactor) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
         _profitFactor = uint16(bound(uint256(_profitFactor), 10, MAX_BPS));
