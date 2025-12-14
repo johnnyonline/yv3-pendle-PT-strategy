@@ -17,7 +17,12 @@ contract StrategyFactory {
     /// @notice Track the deployments. Pendle market => strategy
     mapping(address => address) public deployments;
 
-    constructor(address _management, address _performanceFeeRecipient, address _keeper, address _emergencyAdmin) {
+    constructor(
+        address _management,
+        address _performanceFeeRecipient,
+        address _keeper,
+        address _emergencyAdmin
+    ) {
         management = _management;
         performanceFeeRecipient = _performanceFeeRecipient;
         keeper = _keeper;
@@ -30,7 +35,11 @@ contract StrategyFactory {
      * @param _market The market address.
      * @return . The address of the new strategy.
      */
-    function newStrategy(address _asset, address _market, string calldata _name) external virtual returns (address) {
+    function newStrategy(
+        address _asset,
+        address _market,
+        string calldata _name
+    ) external virtual returns (address) {
         // tokenized strategies available setters.
         IStrategyInterface _newStrategy = IStrategyInterface(address(new Strategy(_asset, _market, _name)));
 
@@ -48,7 +57,11 @@ contract StrategyFactory {
         return address(_newStrategy);
     }
 
-    function setAddresses(address _management, address _performanceFeeRecipient, address _keeper) external {
+    function setAddresses(
+        address _management,
+        address _performanceFeeRecipient,
+        address _keeper
+    ) external {
         require(msg.sender == management, "!management");
         management = _management;
         performanceFeeRecipient = _performanceFeeRecipient;

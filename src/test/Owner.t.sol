@@ -4,7 +4,10 @@ import {Setup, ERC20} from "./utils/Setup.sol";
 
 interface IAuctionFactory {
 
-    function createNewAuction(address _want, address _receiver) external returns (address);
+    function createNewAuction(
+        address _want,
+        address _receiver
+    ) external returns (address);
 
 }
 

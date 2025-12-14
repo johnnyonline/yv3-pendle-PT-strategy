@@ -38,7 +38,7 @@ contract OperationTest is Setup {
         vm.expectRevert("!valid");
         strategyFactory.newStrategy(tokenAddrs["YFI"], LP, "Tokenized Strategy");
 
-        address wrongMarket = 0x1BD78377DFbCA2043e38b692D2E0b32396b4772d; // ysyBOLD market
+        address wrongMarket = 0x83B2C0b470Ff5f2a60D2BF2AE109766E8bb3E862; // ysyBOLD market
 
         vm.expectRevert("!valid");
         strategyFactory.newStrategy(address(asset), wrongMarket, "Tokenized Strategy");
@@ -423,7 +423,10 @@ contract OperationTest is Setup {
         assertEq(asset.balanceOf(patientUser), balanceBefore + _amount, "!final balance patientUser");
     }
 
-    function test_profitableReport(uint256 _amount, uint16 _profitFactor) public {
+    function test_profitableReport(
+        uint256 _amount,
+        uint16 _profitFactor
+    ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
         _profitFactor = uint16(bound(uint256(_profitFactor), 10, MAX_BPS));
 
@@ -458,7 +461,10 @@ contract OperationTest is Setup {
         assertGe(asset.balanceOf(user), balanceBefore + _amount, "!final balance");
     }
 
-    function test_profitableReport_withFees(uint256 _amount, uint16 _profitFactor) public {
+    function test_profitableReport_withFees(
+        uint256 _amount,
+        uint16 _profitFactor
+    ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
         _profitFactor = uint16(bound(uint256(_profitFactor), 10, MAX_BPS));
 

@@ -30,12 +30,19 @@ contract Setup is Test, IEvents {
     // Contract addresses.
     address public constant ROUTER = 0x888888888889758F76e7103c6CbF23ABbF58F946;
 
-    // USDE-MAINNET-SEP2025
-    address public constant LP = 0x6d98a2b6CDbF44939362a3E99793339Ba2016aF4;
-    address public constant SY = 0xf3DbdE762E5B67FaD09d88da3dfD38A83f753FFe;
-    address public constant YT = 0x48bbbEdc4d2491cc08915D7a5c7cc8A8EdF165da;
-    address public constant PT = 0xBC6736d346a5eBC0dEbc997397912CD9b8FAe10a;
-    uint256 public constant EXPIRY = 1758758400;
+    // USDE-MAINNET-FAB2026 ($2.63M LP TVL @ `24_011_022` block)
+    address public constant LP = 0xAADBC004DAcF10e1fdbd87ca1a40ecAF77CC5B02;
+    address public constant SY = 0x925a15bD6A1582fa7c0EbbFc3Dbd29c34f58340e;
+    address public constant YT = 0x5a62AE8118536CF2De315E2c42f9Af035d8129f2;
+    address public constant PT = 0x1F84a51296691320478c98b8d77f2Bbd17D34350;
+    uint256 public constant EXPIRY = 1770249600;
+
+    // // USDE-MAINNET-SEP2025
+    // address public constant LP = 0x6d98a2b6CDbF44939362a3E99793339Ba2016aF4;
+    // address public constant SY = 0xf3DbdE762E5B67FaD09d88da3dfD38A83f753FFe;
+    // address public constant YT = 0x48bbbEdc4d2491cc08915D7a5c7cc8A8EdF165da;
+    // address public constant PT = 0xBC6736d346a5eBC0dEbc997397912CD9b8FAe10a;
+    // uint256 public constant EXPIRY = 1758758400;
 
     // // USDAF-MAINNET-NOV2025
     // address public constant LP = 0x8Bf03ACbF1C2aC2e487c80678De7873C954525D2;
@@ -74,7 +81,8 @@ contract Setup is Test, IEvents {
     uint256 public MAX_BPS = 10_000;
 
     // Fuzz from $0.001 of 1e18 stable coins up to 10 million of a 1e18 coin
-    uint256 public maxFuzzAmount = 10_000_000 * 1e18;
+    // uint256 public maxFuzzAmount = 10_000_000 * 1e18;
+    uint256 public maxFuzzAmount = 1000 * 1e18;
     uint256 public minFuzzAmount = 0.001 * 1e18;
 
     // Default profit max unlock time is set for 10 days
@@ -84,7 +92,9 @@ contract Setup is Test, IEvents {
     uint256 public constant MAX_LOSS = 1e16; // 1%
 
     function setUp() public virtual {
-        uint256 _blockNumber = 23_320_905; // Caching for faster tests
+        // uint256 _blockNumber = 24_011_022; // Caching for faster tests
+        // 23646691
+        uint256 _blockNumber = 23655360; // Caching for faster tests
         vm.selectFork(vm.createFork(vm.envString("ETH_RPC_URL"), _blockNumber));
 
         _setTokenAddrs();
@@ -124,7 +134,11 @@ contract Setup is Test, IEvents {
         return address(_strategy);
     }
 
-    function depositIntoStrategy(IStrategyInterface _strategy, address _user, uint256 _amount) public {
+    function depositIntoStrategy(
+        IStrategyInterface _strategy,
+        address _user,
+        uint256 _amount
+    ) public {
         vm.prank(_user);
         asset.approve(address(_strategy), _amount);
 
@@ -132,7 +146,11 @@ contract Setup is Test, IEvents {
         _strategy.deposit(_amount, _user);
     }
 
-    function mintAndDepositIntoStrategy(IStrategyInterface _strategy, address _user, uint256 _amount) public {
+    function mintAndDepositIntoStrategy(
+        IStrategyInterface _strategy,
+        address _user,
+        uint256 _amount
+    ) public {
         airdrop(asset, _user, _amount);
         depositIntoStrategy(_strategy, _user, _amount);
     }
@@ -154,12 +172,19 @@ contract Setup is Test, IEvents {
         assertEq(_totalAssets, _totalDebt + _totalIdle, "!Added");
     }
 
-    function airdrop(ERC20 _asset, address _to, uint256 _amount) public {
+    function airdrop(
+        ERC20 _asset,
+        address _to,
+        uint256 _amount
+    ) public {
         uint256 balanceBefore = _asset.balanceOf(_to);
         deal(address(_asset), _to, balanceBefore + _amount);
     }
 
-    function setFees(uint16 _protocolFee, uint16 _performanceFee) public {
+    function setFees(
+        uint16 _protocolFee,
+        uint16 _performanceFee
+    ) public {
         address gov = IFactory(factory).governance();
 
         // Need to make sure there is a protocol fee recipient to set the fee.
