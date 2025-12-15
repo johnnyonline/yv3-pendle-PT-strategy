@@ -5,6 +5,7 @@ import "forge-std/console2.sol";
 import {Setup, ERC20} from "./utils/Setup.sol";
 
 import {IPendleRouter, PendleLimitOrderData, PendleSwapData, PendleTokenInput} from "../interfaces/IPendle.sol";
+import {ApproxParams} from "@pendle-core-v2/interfaces/IPAllActionTypeV3.sol";
 
 contract SwapTest is Setup {
 
@@ -16,8 +17,8 @@ contract SwapTest is Setup {
     }
 
     // Should we (1) TWAP into the PT or (2) mint PT and TWAP YT into more PT?
-    function test_swap_vs_mint() public {
-        uint256 _amount = 5_000 * 1e18;
+    function test_swap_vs_mint(uint256 _amount) public {
+        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
 
         address _swapper = address(420);
         address _minter = address(69);
@@ -32,8 +33,6 @@ contract SwapTest is Setup {
 
         uint256 _swapperPT = ERC20(PT).balanceOf(_swapper);
         uint256 _minterPT = ERC20(PT).balanceOf(_minter);
-        console2.log("Minter YT balance:", ERC20(YT).balanceOf(_minter));
-
         console2.log("Swapper PT (direct swap):", _swapperPT / 1e18);
         console2.log("Minter PT (mint + sell YT):", _minterPT / 1e18);
 
@@ -112,23 +111,31 @@ contract SwapTest is Setup {
         vm.startPrank(_caller);
         asset.approve(ROUTER, _amount);
 
-        // Empty swap data as we're not swapping anything
         PendleSwapData memory _swapData;
+        PendleLimitOrderData memory _limit;
+        ApproxParams memory _approx = ApproxParams({
+            guessMin: 0,
+            guessMax: type(uint256).max,
+            guessOffchain: 0,
+            maxIteration: 256,
+            eps: 1e14
+        });
 
         // Asset --> PT
-        (_pt,,) = IPendleRouter(ROUTER)
-            .swapExactTokenForPtSimple(
-                _caller, // receiver
-                LP, // market
-                0, // minPtOut
-                PendleTokenInput({
-                    tokenIn: address(asset),
-                    netTokenIn: _amount,
-                    tokenMintSy: address(asset),
-                    pendleSwap: address(0),
-                    swapData: _swapData
-                })
-            );
+        (_pt,,) = IPendleRouter(ROUTER).swapExactTokenForPt(
+            _caller, // receiver
+            LP, // market
+            0, // minPtOut
+            _approx, // guessPtOut
+            PendleTokenInput({
+                tokenIn: address(asset),
+                netTokenIn: _amount,
+                tokenMintSy: address(asset),
+                pendleSwap: address(0),
+                swapData: _swapData
+            }),
+            _limit
+        );
 
         vm.stopPrank();
     }

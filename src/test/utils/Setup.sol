@@ -81,8 +81,7 @@ contract Setup is Test, IEvents {
     uint256 public MAX_BPS = 10_000;
 
     // Fuzz from $0.001 of 1e18 stable coins up to 10 million of a 1e18 coin
-    // uint256 public maxFuzzAmount = 10_000_000 * 1e18;
-    uint256 public maxFuzzAmount = 1000 * 1e18;
+    uint256 public maxFuzzAmount = 10_000_000 * 1e18;
     uint256 public minFuzzAmount = 0.001 * 1e18;
 
     // Default profit max unlock time is set for 10 days
@@ -92,9 +91,7 @@ contract Setup is Test, IEvents {
     uint256 public constant MAX_LOSS = 1e16; // 1%
 
     function setUp() public virtual {
-        // uint256 _blockNumber = 24_011_022; // Caching for faster tests
-        // 23646691
-        uint256 _blockNumber = 23655360; // Caching for faster tests
+        uint256 _blockNumber = 24_011_022; // Caching for faster tests
         vm.selectFork(vm.createFork(vm.envString("ETH_RPC_URL"), _blockNumber));
 
         _setTokenAddrs();
