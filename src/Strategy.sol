@@ -31,19 +31,21 @@ contract PendlePTStrategy is BaseHealthCheck {
     /// @notice Whether withdrawals are open to everyone
     bool public openWithdrawals;
 
-    /// @notice Whether should claim YT rewards and yield
-    bool public shouldClaimYT;
-
     /// @notice Auction contract for selling rewards
     address public auction;
 
-    /// @notice Maximum amount of YT to market sell for SY in a single harvest
-    /// @dev Selling YTs realizes yield that otherwise may accrue to depositors over time.
-    ///       By selling YTs, the vault captures potential future yield upfront.
-    ///       This can disadvantage new depositors, since past depositors already benefited
-    ///       from the realized gains, while new depositors contribute fresh YTs without sharing
-    ///       in those prior benefits
-    uint256 public maxYTToSell;
+    /// @notice Maximum amount of asset to swap for PT at once
+    /// @dev Default is 0 (swapping disabled)
+    uint256 public maxAssetToSwap;
+
+    /// @notice Minimum idle asset required to trigger a swap
+    uint256 public minAssetToSwap;
+
+    /// @notice Minimum time between swaps
+    uint256 public minSwapInterval;
+
+    /// @notice Timestamp of the last swap
+    uint256 public lastSwap;
 
     /// @notice Addresses allowed to deposit when openDeposits is false
     mapping(address => bool) public allowed;
@@ -144,7 +146,7 @@ contract PendlePTStrategy is BaseHealthCheck {
 
     /// @notice Allow anyone to deposit
     /// @dev This is irreversible
-    function allowDeposits() external onlyManagement {
+    function allowDeposits() external onlyManagement { // @todo -- remove (and then implement base thing from schlag comment)
         openDeposits = true;
     }
 
@@ -163,21 +165,30 @@ contract PendlePTStrategy is BaseHealthCheck {
         allowed[_address] = true;
     }
 
-    /// @notice Set whether to claim YT rewards and yield
-    /// @param _shouldClaimYT Whether to claim YT rewards and yield
-    function setShouldClaimYT(
-        bool _shouldClaimYT
+    /// @notice Set the maximum amount of asset to swap for PT at once
+    /// @dev Setting this to zero disables swapping
+    /// @param _maxAssetToSwap Maximum amount of asset to swap at once
+    function setMaxAssetToSwap(
+        uint256 _maxAssetToSwap
     ) external onlyManagement {
-        shouldClaimYT = _shouldClaimYT;
+        maxAssetToSwap = _maxAssetToSwap;
     }
 
-    /// @notice Set the maximum amount of YT to sell
-    /// @dev Used to limit the amount of YT sold in a single harvest to minimize slippage
-    /// @param _maxYTToSell Maximum amount of YT to sell in a single harvest
-    function setMaxYTToSell(
-        uint256 _maxYTToSell
+    /// @notice Set the minimum idle asset required to trigger a swap
+    /// @dev Setting this to `type(uint256).max` disables swapping
+    /// @param _minAssetToSwap Minimum asset balance to swap
+    function setMinAssetToSwap(
+        uint256 _minAssetToSwap
     ) external onlyManagement {
-        maxYTToSell = _maxYTToSell;
+        minAssetToSwap = _minAssetToSwap;
+    }
+
+    /// @notice Set the minimum time between swaps
+    /// @param _minSwapInterval Minimum seconds between swaps
+    function setMinSwapInterval(
+        uint256 _minSwapInterval
+    ) external onlyManagement {
+        minSwapInterval = _minSwapInterval;
     }
 
     /// @notice Update the auction address
@@ -195,20 +206,42 @@ contract PendlePTStrategy is BaseHealthCheck {
     // ===============================================================
 
     /// @inheritdoc BaseStrategy
-    function _deployFunds(
+    function _deployFunds(uint256 /*_amount*/) internal override {
+        return; // Do nothing, funds are deployed during tend
+    }
+
+    /// @inheritdoc BaseStrategy
+    function _freeFunds(
         uint256 _amount
     ) internal override {
-        // Empty swap data as we're not swapping anything
+        uint256 _totalAssets = TokenizedStrategy.totalAssets();
+        uint256 _totalInvested = _totalAssets - asset.balanceOf(address(this));
+        uint256 _toFree = balanceOfPT() * _amount / _totalInvested;
+
+        _freePT(_toFree);
+    }
+
+    /// @inheritdoc BaseStrategy
+    function _harvestAndReport() internal override returns (uint256 _totalAssets) {
+        return asset.balanceOf(address(this)) + balanceOfPT();
+    }
+
+    /// @inheritdoc BaseStrategy
+    function _tend(uint256 /*_totalIdle*/) internal override {
+        // Update last swap time
+        lastSwap = block.timestamp;
+
+        // Empty swap data as we are using a supported token
         PendleSwapData memory _swapData;
 
-        // Asset --> PY
-        ROUTER.mintPyFromToken(
+        // Asset --> PT
+        ROUTER.swapExactTokenForPtSimple( // @todo -- use swapExactTokenForPt
             address(this), // receiver
-            address(YT), // YT
-            0, // minPyOut
+            address(LP), // market
+            0, // minPtOut
             PendleTokenInput({
                 tokenIn: address(asset),
-                netTokenIn: _amount,
+                netTokenIn: Math.min(asset.balanceOf(address(this)), maxAssetToSwap),
                 tokenMintSy: address(asset),
                 pendleSwap: address(0),
                 swapData: _swapData
@@ -217,60 +250,24 @@ contract PendlePTStrategy is BaseHealthCheck {
     }
 
     /// @inheritdoc BaseStrategy
-    function _freeFunds(
-        uint256 _amount
-    ) internal override {
-        // Free proportional share
-        uint256 _totalAssets = TokenizedStrategy.totalAssets();
-        uint256 _totalInvested = _totalAssets - asset.balanceOf(address(this));
-        uint256 _toFree = balanceOfPT() * _amount / _totalInvested;
+    function _tendTrigger() internal view override returns (bool) {
+        // Do nothing if market is expired
+        if (_isExpired()) return false;
 
-        // PT --> asset
-        _freePT(_toFree);
-    }
+        // Do nothing if strategy is shutdown
+        if (TokenizedStrategy.isShutdown()) return false;
 
-    /// @inheritdoc BaseStrategy
-    function _harvestAndReport() internal override returns (uint256 _totalAssets) {
-        if (!TokenizedStrategy.isShutdown()) {
-            bool _isActive = !_isExpired();
-            uint256 _yt = YT.balanceOf(address(this));
-            if (_yt > DUST_THRESHOLD) {
-                if (shouldClaimYT) {
-                    // Claim any rewards or accrued interest (in SY) from the YT
-                    YT.redeemDueInterestAndRewards(
-                        address(this), // user
-                        true, // redeemInterest
-                        true // redeemRewards
-                    );
-                }
+        // Do nothing if swap is disabled
+        if (maxAssetToSwap == 0) return false;
 
-                // Sell YT only if market is active
-                if (_isActive) {
-                    uint256 _maxYTToSell = maxYTToSell;
-                    if (_maxYTToSell > 0) {
-                        // Empty limit order as we control the amount with `maxYTToSell`
-                        PendleLimitOrderData memory limit;
+        // Do nothing if if not enough time passed since last swap
+        if (block.timestamp - lastSwap < minSwapInterval) return false;
 
-                        // YT --> SY
-                        ROUTER.swapExactYtForSy(
-                            address(this), // receiver
-                            address(LP), // market
-                            Math.min(_yt, _maxYTToSell), // exactYtIn
-                            0, // minSyOut
-                            limit
-                        );
-                    }
-                } else {
-                    // Redeem any SY that were claimed after expiry
-                    _redeemSY(SY.balanceOf(address(this)));
-                }
-            }
+        // Do nothing if not enough asset to swap
+        if (asset.balanceOf(address(this)) < minAssetToSwap) return false;
 
-            // If market is active, deploy all idle SY
-            if (_isActive) _deploySY();
-        }
-
-        return asset.balanceOf(address(this)) + balanceOfPT();
+        // Otherwise, swap ahead!
+        return true;
     }
 
     /// @inheritdoc BaseStrategy
@@ -278,21 +275,6 @@ contract PendlePTStrategy is BaseHealthCheck {
         uint256 _amount
     ) internal override {
         _freePT(Math.min(balanceOfPT(), _amount));
-    }
-
-    /// @notice Deploy all idle SY tokens into PY
-    /// @dev Mints PY (PT/YT) while keeping the YT, which means there's no slippage
-    function _deploySY() internal {
-        uint256 _sy = SY.balanceOf(address(this));
-        if (_sy > DUST_THRESHOLD) {
-            // SY --> PY
-            ROUTER.mintPyFromSy(
-                address(this), // receiver
-                address(YT), // YT
-                _sy, // netSyIn
-                0 // minPyOut
-            );
-        }
     }
 
     /// @notice Free `_amount` of PT tokens into asset
