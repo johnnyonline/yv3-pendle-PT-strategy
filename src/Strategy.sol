@@ -348,7 +348,7 @@ contract PendlePTStrategy is BaseHealthCheck {
         return LP.isExpired();
     }
 
-    /// @notice Get PendleTokenInput for `_deployFunds`
+    /// @notice Get swap data for `_deployFunds`
     /// @dev Can be overridden in child contracts to customize swap behavior
     /// @dev Defaults to using strategy asset as `tokenMintSy` and no swap
     /// @param _amount The amount of asset to deposit
