@@ -322,7 +322,7 @@ contract PendlePTStrategy is BaseHealthCheck {
     }
 
     /// @notice Redeem SY tokens to asset
-    /// @dev Can be overridden in child contracts to customize redeem behavior e.g. using `redeemSyToToken`
+    /// @dev Can be overridden in child contract to customize redeem behavior e.g. using `ROUTER.redeemSyToToken()`
     function _redeemSY(
         uint256 _amount
     ) internal virtual {
@@ -348,8 +348,8 @@ contract PendlePTStrategy is BaseHealthCheck {
         return LP.isExpired();
     }
 
-    /// @notice Get swap data for `_deployFunds`
-    /// @dev Can be overridden in child contracts to customize swap behavior
+    /// @notice Get swap data for `_deployFunds`'s `ROUTER.mintPyFromToken()`
+    /// @dev Can be overridden in child contract to customize swap behavior
     /// @dev Defaults to using strategy asset as `tokenMintSy` and no swap
     /// @param _amount The amount of asset to deposit
     /// @return The PendleTokenInput struct
