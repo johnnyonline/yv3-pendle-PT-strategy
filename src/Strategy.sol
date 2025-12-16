@@ -198,21 +198,12 @@ contract PendlePTStrategy is BaseHealthCheck {
     function _deployFunds(
         uint256 _amount
     ) internal override {
-        // Empty swap data as we're not swapping anything
-        PendleSwapData memory _swapData;
-
         // Asset --> PY
         ROUTER.mintPyFromToken(
             address(this), // receiver
             address(YT), // YT
             0, // minPyOut
-            PendleTokenInput({
-                tokenIn: address(asset),
-                netTokenIn: _amount,
-                tokenMintSy: address(asset),
-                pendleSwap: address(0),
-                swapData: _swapData
-            })
+            _getPendleTokenInput(_amount)
         );
     }
 
@@ -331,9 +322,10 @@ contract PendlePTStrategy is BaseHealthCheck {
     }
 
     /// @notice Redeem SY tokens to asset
+    /// @dev Can be overridden in child contracts to customize redeem behavior e.g. using `redeemSyToToken`
     function _redeemSY(
         uint256 _amount
-    ) internal {
+    ) internal virtual {
         if (_amount == 0) return;
 
         // SY --> asset
@@ -354,6 +346,22 @@ contract PendlePTStrategy is BaseHealthCheck {
     /// @return True if the market has expired, false otherwise
     function _isExpired() internal view returns (bool) {
         return LP.isExpired();
+    }
+
+    /// @notice Get PendleTokenInput for `_deployFunds`
+    /// @dev Can be overridden in child contracts to customize swap behavior
+    /// @dev Defaults to using strategy asset as `tokenMintSy` and no swap
+    /// @param _amount The amount of asset to deposit
+    /// @return The PendleTokenInput struct
+    function _getPendleTokenInput(uint256 _amount) internal view virtual returns (PendleTokenInput memory) {
+        PendleSwapData memory _swapData;
+        return PendleTokenInput({
+            tokenIn: address(asset),
+            netTokenIn: _amount,
+            tokenMintSy: address(asset),
+            pendleSwap: address(0),
+            swapData: _swapData
+        });
     }
 
 }
