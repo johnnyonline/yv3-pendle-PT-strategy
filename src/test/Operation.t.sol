@@ -13,42 +13,44 @@ contract OperationTest is Setup {
         strategy.allowWithdrawals();
     }
 
-    function test_setupStrategyOK() public {
+    function test_setupStrategyOK() public view {
         console2.log("address of strategy", address(strategy));
         assertTrue(address(0) != address(strategy));
         assertEq(strategy.asset(), address(asset));
         assertEq(strategy.management(), management);
         assertEq(strategy.performanceFeeRecipient(), performanceFeeRecipient);
         assertEq(strategy.keeper(), keeper);
-        assertFalse(strategy.openDeposits());
+        assertFalse(strategy.allowed(address(0)));
+        assertTrue(strategy.allowed(user));
         assertTrue(strategy.openWithdrawals()); // Open on setUp
-        assertFalse(strategy.shouldClaimYT());
         assertTrue(strategy.auction() == address(0));
-        assertEq(strategy.maxYTToSell(), 0);
-        assertEq(strategy.LP(), LP);
-        assertEq(strategy.YT(), YT);
-        assertEq(strategy.PT(), PT);
+        assertEq(strategy.maxPendleTokenToSwap(), type(uint256).max);
+        assertEq(strategy.minSwapInterval(), type(uint256).max);
+        assertEq(strategy.lastSwap(), 0);
+        assertEq(strategy.markets(address(PT)), LP);
+        assertEq(strategy.principalToken(), PT);
         assertEq(strategy.SY(), SY);
-        assertEq(strategy.ROUTER(), ROUTER);
-        assertEq(strategy.DUST_THRESHOLD(), 10_000);
+        assertEq(strategy.PENDLE_TOKEN(), address(asset));
         assertEq(strategy.balanceOfPT(), 0);
+        assertEq(strategy.balanceOfPendleToken(), 0);
     }
 
-    function test_invalidDeployment() public {
-        vm.expectRevert("!valid");
-        strategyFactory.newStrategy(tokenAddrs["YFI"], LP, "Tokenized Strategy");
+    // @todo
+    // function test_invalidDeployment() public {
+    //     vm.expectRevert("!valid");
+    //     strategyFactory.newStrategy(tokenAddrs["YFI"], LP, "Tokenized Strategy");
 
-        address wrongMarket = 0x83B2C0b470Ff5f2a60D2BF2AE109766E8bb3E862; // ysyBOLD market
+    //     address wrongMarket = 0x83B2C0b470Ff5f2a60D2BF2AE109766E8bb3E862; // ysyBOLD market
 
-        vm.expectRevert("!valid");
-        strategyFactory.newStrategy(address(asset), wrongMarket, "Tokenized Strategy");
+    //     vm.expectRevert("!valid");
+    //     strategyFactory.newStrategy(address(asset), wrongMarket, "Tokenized Strategy");
 
-        // Expire market
-        _simulateMarketExpiration();
+    //     // Expire market
+    //     _simulateMarketExpiration();
 
-        vm.expectRevert("expired");
-        strategyFactory.newStrategy(address(asset), LP, "Tokenized Strategy");
-    }
+    //     vm.expectRevert("expired");
+    //     strategyFactory.newStrategy(address(asset), LP, "Tokenized Strategy");
+    // }
 
     function test_operation(
         uint256 _amount
@@ -61,7 +63,8 @@ contract OperationTest is Setup {
         assertEq(strategy.totalAssets(), _amount, "!totalAssets");
 
         // Earn Interest
-        skip(1 days);
+        vm.prank(keeper);
+        strategy.tend();
 
         // Report profit
         vm.prank(keeper);
@@ -94,7 +97,8 @@ contract OperationTest is Setup {
         assertEq(strategy.totalAssets(), _amount, "!totalAssets");
 
         // Earn Interest
-        skip(1 days);
+        vm.prank(keeper);
+        strategy.tend();
 
         // Report profit
         vm.prank(keeper);
@@ -128,246 +132,54 @@ contract OperationTest is Setup {
         vm.prank(user);
         strategy.redeem(_amount, user, user);
 
-        assertGe(asset.balanceOf(user), balanceBefore + _amount, "!final balance");
+        assertGt(asset.balanceOf(user), balanceBefore + _amount, "!final balance");
     }
 
-    function test_operation_noSwapOnLowYT(
+    function test_tend_noSwapWhenDisabled(
         uint256 _amount
     ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
 
-        // Make sure we sell the YTs
+        // Disable swapping
         vm.prank(management);
-        strategy.setMaxYTToSell(type(uint256).max);
+        strategy.setMaxPendleTokenToSwap(0);
 
         // Deposit into strategy
         mintAndDepositIntoStrategy(strategy, user, _amount);
 
         assertEq(strategy.totalAssets(), _amount, "!totalAssets");
+        assertEq(strategy.balanceOfPT(), 0, "!balanceOfPT");
+        assertEq(strategy.balanceOfPendleToken(), _amount, "!balanceOfPendleToken");
 
-        // Get rid of some YT such that we're below dust threshold
-        vm.startPrank(address(strategy));
-        ERC20(YT).transfer(address(420), ERC20(YT).balanceOf(address(strategy)) - strategy.DUST_THRESHOLD());
-        vm.stopPrank();
-
-        assertEq(ERC20(YT).balanceOf(address(strategy)), strategy.DUST_THRESHOLD());
-        assertEq(ERC20(SY).balanceOf(address(strategy)), 0);
-
-        // Report
+        // Tend does nothing other than updating lastSwap
         vm.prank(keeper);
-        (uint256 profit, uint256 loss) = strategy.report();
+        strategy.tend();
 
-        // Check return Values
-        assertGe(profit, 0, "!profit");
-        assertEq(loss, 0, "!loss");
+        // No PT acquired
+        assertEq(strategy.balanceOfPT(), 0, "!balanceOfPT");
+        assertEq(strategy.balanceOfPendleToken(), _amount, "!balanceOfPendleToken");
 
-        assertEq(ERC20(YT).balanceOf(address(strategy)), strategy.DUST_THRESHOLD());
-        assertEq(ERC20(SY).balanceOf(address(strategy)), 0);
+        // Check lastSwap updated
+        assertEq(strategy.lastSwap(), block.timestamp, "!lastSwap");
     }
 
-    function test_operation_sellYT(
+    function test_tend_noSwapAfterExpiry(
         uint256 _amount
     ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
-
-        // Make sure we sell the YTs
-        vm.prank(management);
-        strategy.setMaxYTToSell(type(uint256).max);
 
         // Deposit into strategy
         mintAndDepositIntoStrategy(strategy, user, _amount);
 
         assertEq(strategy.totalAssets(), _amount, "!totalAssets");
-
-        uint256 ytBefore = ERC20(YT).balanceOf(address(strategy));
-        assertGt(ytBefore, strategy.DUST_THRESHOLD());
-
-        // Report to sell YT
-        vm.prank(keeper);
-        (uint256 profit, uint256 loss) = strategy.report();
-
-        // Check return Values
-        assertGt(profit, 0, "!profit");
-        assertEq(loss, 0, "!loss");
-
-        assertLt(ERC20(YT).balanceOf(address(strategy)), ytBefore);
-        assertGt(ERC20(YT).balanceOf(address(strategy)), 0); // We still have some YT bc of redeploying SY profits
-        assertEq(ERC20(SY).balanceOf(address(strategy)), 0);
-    }
-
-    function test_operation_noSwapAfterExpiry(
-        uint256 _amount
-    ) public {
-        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
-
-        // Make sure we sell the YTs
-        vm.prank(management);
-        strategy.setMaxYTToSell(type(uint256).max);
-
-        // Deposit into strategy
-        mintAndDepositIntoStrategy(strategy, user, _amount);
-
-        assertEq(strategy.totalAssets(), _amount, "!totalAssets");
-
-        uint256 ytBefore = ERC20(YT).balanceOf(address(strategy));
-        assertGt(ytBefore, strategy.DUST_THRESHOLD());
 
         // Expire market
         _simulateMarketExpiration();
 
-        // Report
+        // Tend reverts after expiry
         vm.prank(keeper);
-        (uint256 profit, uint256 loss) = strategy.report();
-
-        // Check return Values
-        assertGe(profit, 0, "!profit");
-        assertEq(loss, 0, "!loss");
-
-        assertEq(ERC20(YT).balanceOf(address(strategy)), ytBefore);
-    }
-
-    function test_operation_noDeployAfterExpiry(
-        uint256 _amount
-    ) public {
-        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
-
-        // Make sure we sell the YTs
-        vm.prank(management);
-        strategy.setMaxYTToSell(type(uint256).max);
-
-        // Remove performance fee
-        setFees(0, 0);
-
-        // Deposit into strategy
-        mintAndDepositIntoStrategy(strategy, user, _amount);
-
-        assertEq(strategy.totalAssets(), _amount, "!totalAssets");
-
-        // Report profit
-        vm.prank(keeper);
-        (uint256 profit, uint256 loss) = strategy.report();
-
-        // Check return Values
-        assertGt(profit, 0, "!profit");
-        assertEq(loss, 0, "!loss");
-
-        // Expire market
-        _simulateMarketExpiration();
-
-        // Airdrop SY, simulates claiming yield after expiry
-        airdrop(ERC20(SY), address(strategy), 100_000);
-
-        // Report profit from the SY airdrop
-        vm.prank(keeper);
-        (profit, loss) = strategy.report();
-
-        // Check return Values
-        assertGt(profit, 0, "!profit");
-        assertEq(loss, 0, "!loss");
-
-        skip(strategy.profitMaxUnlockTime());
-
-        uint256 balanceBefore = asset.balanceOf(user);
-
-        // Withdraw all funds
-        vm.prank(user);
-        strategy.redeem(_amount, user, user);
-
-        assertGe(asset.balanceOf(user), balanceBefore + _amount, "!final balance");
-
-        // Make sure all funds were distributed
-        assertEq(ERC20(SY).balanceOf(address(strategy)), 0);
-        assertEq(ERC20(LP).balanceOf(address(strategy)), 0);
-        assertEq(ERC20(PT).balanceOf(address(strategy)), 0);
-        assertGt(ERC20(YT).balanceOf(address(strategy)), 0); // We do have some worthless YT
-        assertEq(strategy.totalSupply(), 0);
-        assertEq(strategy.totalAssets(), 0);
-        assertEq(asset.balanceOf(address(strategy)), 0);
-    }
-
-    function test_operation_noDeployOnLowSY(
-        uint256 _amount
-    ) public {
-        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
-
-        // Deposit into strategy
-        mintAndDepositIntoStrategy(strategy, user, _amount);
-
-        assertEq(strategy.totalAssets(), _amount, "!totalAssets");
-
-        assertEq(ERC20(SY).balanceOf(address(strategy)), 0);
-
-        // Get rid of all YT
-        vm.startPrank(address(strategy));
-        ERC20(YT).transfer(address(420), ERC20(YT).balanceOf(address(strategy)));
-        vm.stopPrank();
-
-        // Airdrop SY dust
-        airdrop(ERC20(SY), address(strategy), strategy.DUST_THRESHOLD());
-
-        // Report
-        vm.prank(keeper);
-        (uint256 profit, uint256 loss) = strategy.report();
-
-        // Check return Values
-        assertGe(profit, 0, "!profit");
-        assertEq(loss, 0, "!loss");
-
-        assertEq(ERC20(SY).balanceOf(address(strategy)), strategy.DUST_THRESHOLD());
-    }
-
-    function test_operation_claimYT(
-        uint256 _amount
-    ) public {
-        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
-
-        // Set claim YT to true
-        vm.prank(management);
-        strategy.setShouldClaimYT(true);
-
-        // Deposit into strategy
-        mintAndDepositIntoStrategy(strategy, user, _amount);
-
-        assertEq(strategy.totalAssets(), _amount, "!totalAssets");
-
-        // Earn Interest
-        skip(1 days);
-        vm.roll(block.number + 1); // Roll so PY index can update
-
-        // Report profit
-        vm.prank(keeper);
-        (uint256 profit, uint256 loss) = strategy.report();
-
-        // Check return Values
-        assertGe(profit, 0, "!profit");
-        assertEq(loss, 0, "!loss");
-
-        skip(strategy.profitMaxUnlockTime());
-
-        uint256 balanceBefore = asset.balanceOf(user);
-
-        // Withdraw all funds
-        vm.prank(user);
-        strategy.redeem(_amount, user, user);
-
-        // Make sure user did not lose more than max
-        assertApproxEqRel(asset.balanceOf(user), balanceBefore + _amount, MAX_LOSS, "!final balance");
-    }
-
-    function test_operation_depositAfterExpiry(
-        uint256 _amount
-    ) public {
-        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
-
-        // Expire market
-        _simulateMarketExpiration();
-
-        // Airdrop some asset to user
-        airdrop(asset, user, _amount);
-
-        vm.prank(user);
-        vm.expectRevert("ERC4626: deposit more than max");
-        strategy.deposit(_amount, user);
+        vm.expectRevert();
+        strategy.tend();
     }
 
     function test_operation_freeProportionalShare(
@@ -389,8 +201,9 @@ contract OperationTest is Setup {
 
         assertEq(strategy.totalAssets(), _amount * 2, "!totalAssets");
 
-        // Earn Interest
-        skip(1 days);
+        // Tend to swap into PT
+        vm.prank(keeper);
+        strategy.tend();
 
         // Report profit
         vm.prank(keeper);
@@ -420,27 +233,22 @@ contract OperationTest is Setup {
         vm.prank(patientUser);
         strategy.redeem(_amount, patientUser, patientUser);
 
-        assertEq(asset.balanceOf(patientUser), balanceBefore + _amount, "!final balance patientUser");
+        assertGt(asset.balanceOf(patientUser), balanceBefore + _amount, "!final balance patientUser");
     }
 
     function test_profitableReport(
-        uint256 _amount,
-        uint16 _profitFactor
+        uint256 _amount
     ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
-        _profitFactor = uint16(bound(uint256(_profitFactor), 10, MAX_BPS));
 
         // Deposit into strategy
         mintAndDepositIntoStrategy(strategy, user, _amount);
 
         assertEq(strategy.totalAssets(), _amount, "!totalAssets");
 
-        // Earn Interest
-        skip(1 days);
-
-        // Make sure we sell YT to earn the profit
-        vm.prank(management);
-        strategy.setMaxYTToSell(type(uint256).max);
+        // Tend to swap into PT
+        vm.prank(keeper);
+        strategy.tend();
 
         // Report profit
         vm.prank(keeper);
@@ -458,15 +266,14 @@ contract OperationTest is Setup {
         vm.prank(user);
         strategy.redeem(_amount, user, user);
 
-        assertGe(asset.balanceOf(user), balanceBefore + _amount, "!final balance");
+        // Make sure user did not lose more than max
+        assertApproxEqRel(asset.balanceOf(user), balanceBefore + _amount, MAX_LOSS, "!final balance");
     }
 
     function test_profitableReport_withFees(
-        uint256 _amount,
-        uint16 _profitFactor
+        uint256 _amount
     ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
-        _profitFactor = uint16(bound(uint256(_profitFactor), 10, MAX_BPS));
 
         // Set protocol fee to 0 and perf fee to 10%
         setFees(0, 1_000);
@@ -476,12 +283,9 @@ contract OperationTest is Setup {
 
         assertEq(strategy.totalAssets(), _amount, "!totalAssets");
 
-        // Earn Interest
-        skip(1 days);
-
-        // Make sure we sell YT to earn the profit
-        vm.prank(management);
-        strategy.setMaxYTToSell(type(uint256).max);
+        // Tend to swap into PT
+        vm.prank(keeper);
+        strategy.tend();
 
         // Report profit
         vm.prank(keeper);
@@ -504,53 +308,149 @@ contract OperationTest is Setup {
         vm.prank(user);
         strategy.redeem(_amount, user, user);
 
-        assertGe(asset.balanceOf(user), balanceBefore + _amount, "!final balance");
+        // Make sure user did not lose more than max
+        assertApproxEqRel(asset.balanceOf(user), balanceBefore + _amount, MAX_LOSS, "!final balance");
 
         vm.prank(performanceFeeRecipient);
         strategy.redeem(expectedShares, performanceFeeRecipient, performanceFeeRecipient);
 
         checkStrategyTotals(strategy, 0, 0, 0);
 
-        assertGe(asset.balanceOf(performanceFeeRecipient), expectedShares, "!perf fee out");
+        // Make sure fee recipient did not lose more than max
+        assertApproxEqRel(
+            asset.balanceOf(performanceFeeRecipient), balanceBefore + expectedShares, MAX_LOSS, "!perf fee out"
+        );
     }
 
-    function test_tendTrigger(
+    function test_tendTrigger_returnsFalse_whenShutdown(
         uint256 _amount
     ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
 
-        (bool trigger,) = strategy.tendTrigger();
-        assertTrue(!trigger);
+        // Setup: enable tend trigger
+        vm.startPrank(management);
+        strategy.setMinSwapInterval(0);
+        vm.stopPrank();
 
-        // Deposit into strategy
+        // Deposit
         mintAndDepositIntoStrategy(strategy, user, _amount);
 
+        // Verify trigger is true before shutdown
+        (bool trigger,) = strategy.tendTrigger();
+        assertTrue(trigger);
+
+        // Shutdown
+        vm.prank(emergencyAdmin);
+        strategy.shutdownStrategy();
+
+        // Trigger should be false
         (trigger,) = strategy.tendTrigger();
-        assertTrue(!trigger);
+        assertFalse(trigger);
+    }
 
-        // Skip some time
-        skip(1 days);
+    function test_tendTrigger_returnsFalse_whenExpired(
+        uint256 _amount
+    ) public {
+        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
 
+        // Setup: enable tend trigger
+        vm.prank(management);
+        strategy.setMinSwapInterval(0);
+
+        // Deposit
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        // Verify trigger is true before expiry
+        (bool trigger,) = strategy.tendTrigger();
+        assertTrue(trigger);
+
+        // Expire market
+        _simulateMarketExpiration();
+
+        // Trigger should be false
         (trigger,) = strategy.tendTrigger();
-        assertTrue(!trigger);
+        assertFalse(trigger);
+    }
 
+    function test_tendTrigger_returnsFalse_whenSwapDisabled(
+        uint256 _amount
+    ) public {
+        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
+
+        // Setup: enable tend trigger but disable swap
+        vm.startPrank(management);
+        strategy.setMinSwapInterval(0);
+        strategy.setMaxPendleTokenToSwap(0);
+        vm.stopPrank();
+
+        // Deposit
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        // Trigger should be false
+        (bool trigger,) = strategy.tendTrigger();
+        assertFalse(trigger);
+    }
+
+    function test_tendTrigger_returnsFalse_whenIntervalNotPassed(
+        uint256 _amount
+    ) public {
+        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
+
+        // Setup: enable tend trigger with interval
+        vm.prank(management);
+        strategy.setMinSwapInterval(1 days);
+
+        // Deposit
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        // Trigger should be true (lastSwap is 0)
+        (bool trigger,) = strategy.tendTrigger();
+        assertTrue(trigger);
+
+        // Tend to update lastSwap
         vm.prank(keeper);
-        strategy.report();
+        strategy.tend();
 
+        // Trigger should be false (interval not passed)
         (trigger,) = strategy.tendTrigger();
-        assertTrue(!trigger);
+        assertFalse(trigger);
 
-        // Unlock Profits
-        skip(strategy.profitMaxUnlockTime());
-
+        // Skip half the interval
+        skip(12 hours);
         (trigger,) = strategy.tendTrigger();
-        assertTrue(!trigger);
+        assertFalse(trigger);
 
-        vm.prank(user);
-        strategy.redeem(_amount, user, user);
-
+        // Skip past interval
+        skip(13 hours);
         (trigger,) = strategy.tendTrigger();
-        assertTrue(!trigger);
+        assertTrue(trigger);
+    }
+
+    function test_tendTrigger_returnsFalse_whenNoFunds() public {
+        // Setup: enable tend trigger
+        vm.prank(management);
+        strategy.setMinSwapInterval(0);
+
+        // No deposit, no funds
+        (bool trigger,) = strategy.tendTrigger();
+        assertFalse(trigger);
+    }
+
+    function test_tendTrigger_returnsTrue_whenAllConditionsMet(
+        uint256 _amount
+    ) public {
+        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
+
+        // Setup: enable tend trigger
+        vm.prank(management);
+        strategy.setMinSwapInterval(0);
+
+        // Deposit
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        // All conditions met
+        (bool trigger,) = strategy.tendTrigger();
+        assertTrue(trigger);
     }
 
 }

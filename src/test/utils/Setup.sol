@@ -123,8 +123,9 @@ contract Setup is Test, IEvents {
 
     function setUpStrategy() public returns (address) {
         // we save the strategy as a IStrategyInterface to give it the needed interface
-        IStrategyInterface _strategy =
-            IStrategyInterface(address(strategyFactory.newStrategy(address(asset), LP, "Tokenized Strategy")));
+        IStrategyInterface _strategy = IStrategyInterface(
+            address(strategyFactory.newStrategy(address(asset), address(asset), LP, "Tokenized Strategy"))
+        );
 
         vm.startPrank(management);
         _strategy.acceptManagement();
@@ -161,7 +162,7 @@ contract Setup is Test, IEvents {
         uint256 _totalAssets,
         uint256 _totalDebt,
         uint256 _totalIdle
-    ) public {
+    ) public view {
         uint256 _assets = _strategy.totalAssets();
         uint256 _balance = ERC20(_strategy.asset()).balanceOf(address(_strategy));
         uint256 _idle = _balance > _assets ? _assets : _balance;

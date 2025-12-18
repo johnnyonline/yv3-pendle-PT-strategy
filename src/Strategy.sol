@@ -2,22 +2,14 @@
 pragma solidity 0.8.23;
 
 import {BaseHealthCheck, BaseStrategy, ERC20} from "@periphery/Bases/HealthCheck/BaseHealthCheck.sol";
+import {PendleSwapper} from "@periphery/swappers/PendleSwapper.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IAuction} from "./interfaces/IAuction.sol";
-import {
-    IPendleMarket,
-    IPendlePrincipalToken,
-    IPendleRouter,
-    IPendleStandardizedYield,
-    IPendleYieldToken,
-    PendleLimitOrderData,
-    PendleSwapData,
-    PendleTokenInput
-} from "./interfaces/IPendle.sol";
+import {IPendleMarket, IPendlePrincipalToken, IPendleStandardizedYield} from "./interfaces/IPendle.sol";
 
-contract PendlePTStrategy is BaseHealthCheck {
+contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
 
     using SafeERC20 for *;
 
@@ -25,23 +17,22 @@ contract PendlePTStrategy is BaseHealthCheck {
     // Storage
     // ===============================================================
 
-    /// @notice Whether deposits are open to everyone
-    bool public openDeposits;
-
     /// @notice Whether withdrawals are open to everyone
     bool public openWithdrawals;
 
+    /// @notice The principal token (PT) of the Pendle market
+    IPendlePrincipalToken public principalToken;
+
     /// @notice Auction contract for selling rewards
-    address public auction;
+    IAuction public auction;
 
-    /// @notice Maximum amount of asset to swap for PT at once
-    /// @dev Default is 0 (swapping disabled)
-    uint256 public maxAssetToSwap;
-
-    /// @notice Minimum idle asset required to trigger a swap
-    uint256 public minAssetToSwap;
+    /// @notice Maximum amount of Pendle tokens to swap for PT at once
+    /// @dev Default is `type(uint256).max` (no limit)
+    /// @dev Can be set to zero to disable swapping
+    uint256 public maxPendleTokenToSwap;
 
     /// @notice Minimum time between swaps
+    /// @dev Default is `type(uint256).max` (automatic swapping disabled)
     uint256 public minSwapInterval;
 
     /// @notice Timestamp of the last swap
@@ -54,54 +45,69 @@ contract PendlePTStrategy is BaseHealthCheck {
     // Constants
     // ===============================================================
 
-    /// @notice Pendle Market
-    IPendleMarket public immutable LP;
-
-    /// @notice Pendle Yield Token
-    IPendleYieldToken public immutable YT;
-
-    /// @notice Pendle Principal Token
-    IPendlePrincipalToken public immutable PT;
+    /// @notice The token used for entering/exiting Pendle markets
+    /// @dev Must be supported by the Pendle market
+    /// @dev Could be the same as `asset`
+    ERC20 public immutable PENDLE_TOKEN;
 
     /// @notice Pendle Standardized Yield Token
     IPendleStandardizedYield public immutable SY;
-
-    /// @notice Pendle Router
-    IPendleRouter public constant ROUTER = IPendleRouter(0x888888888889758F76e7103c6CbF23ABbF58F946);
-
-    /// @notice Dust threshold
-    uint256 public constant DUST_THRESHOLD = 10_000;
 
     // ===============================================================
     // Constructor
     // ===============================================================
 
     /// @param _asset The underlying asset
+    /// @param _pendleToken The Pendle token used for entering/exiting the market
     /// @param _market The market address
     /// @param _name The name
-    constructor(address _asset, address _market, string memory _name) BaseHealthCheck(_asset, _name) {
-        LP = IPendleMarket(_market);
-        require(!_isExpired(), "expired");
+    constructor(
+        address _asset,
+        address _pendleToken,
+        address _market,
+        string memory _name
+    ) BaseHealthCheck(_asset, _name) {
+        // Get `SY` and validate `pendleToken`
+        (SY,,) = IPendleMarket(_market).readTokens();
+        require(SY.isValidTokenOut(_pendleToken), "!tokenOut");
+        require(SY.isValidTokenIn(_pendleToken), "!tokenIn");
 
-        (SY, PT, YT) = LP.readTokens();
-        require(SY.isValidTokenOut(_asset) && SY.isValidTokenIn(_asset), "!valid");
+        // Set default values
+        maxPendleTokenToSwap = type(uint256).max;
+        minSwapInterval = type(uint256).max;
 
-        asset.forceApprove(address(ROUTER), type(uint256).max);
-        SY.forceApprove(address(ROUTER), type(uint256).max);
-        YT.forceApprove(address(ROUTER), type(uint256).max);
-        PT.forceApprove(address(ROUTER), type(uint256).max);
+        // Set Pendle token
+        PENDLE_TOKEN = ERC20(_pendleToken);
+
+        // Update market
+        _updateMarket(_market);
+
+        // Approve Pendle token for router
+        PENDLE_TOKEN.forceApprove(pendleRouter, type(uint256).max);
     }
 
     // ===============================================================
     // View functions
     // ===============================================================
 
+    /// @notice Get the balance of PT tokens held by the strategy
+    /// @return The balance of PT tokens held by the strategy
+    function balanceOfPT() public view returns (uint256) {
+        return principalToken.balanceOf(address(this));
+    }
+
+    /// @notice Get the balance of Pendle tokens held by the strategy
+    /// @return The balance of Pendle tokens held by the strategy
+    function balanceOfPendleToken() public view returns (uint256) {
+        return PENDLE_TOKEN.balanceOf(address(this));
+    }
+
     /// @inheritdoc BaseStrategy
     function availableDepositLimit(
         address _owner
     ) public view override returns (uint256) {
-        // If active and deposits are open or user is allowed return max, otherwise return zero
-        return !_isExpired() && (openDeposits || allowed[_owner]) ? type(uint256).max : 0;
+        // If active and user is allowed return max, otherwise return zero
+        return !_isExpired() && allowed[_owner] ? type(uint256).max : 0;
     }
 
     /// @inheritdoc BaseStrategy
@@ -112,43 +118,32 @@ contract PendlePTStrategy is BaseHealthCheck {
         return _isExpired() || openWithdrawals ? type(uint256).max : 0;
     }
 
-    /// @notice Get the balance of PT tokens held by the strategy
-    /// @return The balance of PT tokens held by the strategy
-    function balanceOfPT() public view returns (uint256) {
-        return PT.balanceOf(address(this));
-    }
-
     // ===============================================================
     // Keeper functions
     // ===============================================================
 
     /// @notice Kick an auction for a given token
-    /// @dev Cannot kick strategy asset or SY/PT/YT/LP
+    /// @dev Cannot kick strategy asset/Pendle token or SY/LP/PT
     /// @param _token The token that's being sold
     /// @return The available amount for bidding on in the auction
     function kickAuction(
         address _token
     ) external onlyKeepers returns (uint256) {
+        address _principalToken = address(principalToken);
         require(
-            _token != address(LP) && _token != address(SY) && _token != address(PT) && _token != address(YT)
-                && _token != address(asset),
+            _token != address(asset) && _token != address(PENDLE_TOKEN) && _token != address(SY)
+                && _token != markets[_principalToken] && _token != _principalToken,
             "!token"
         );
 
-        address _auction = auction;
-        ERC20(_token).safeTransfer(_auction, ERC20(_token).balanceOf(address(this)));
-        return IAuction(_auction).kick(_token);
+        IAuction _auction = auction;
+        ERC20(_token).safeTransfer(address(_auction), ERC20(_token).balanceOf(address(this)));
+        return _auction.kick(_token);
     }
 
     // ===============================================================
     // Management functions
     // ===============================================================
-
-    /// @notice Allow anyone to deposit
-    /// @dev This is irreversible
-    function allowDeposits() external onlyManagement { // @todo -- remove (and then implement base thing from schlag comment)
-        openDeposits = true;
-    }
 
     /// @notice Allow anyone to withdraw before expiry
     /// @dev This is irreversible
@@ -165,22 +160,13 @@ contract PendlePTStrategy is BaseHealthCheck {
         allowed[_address] = true;
     }
 
-    /// @notice Set the maximum amount of asset to swap for PT at once
+    /// @notice Set the maximum amount of Pendle tokens to swap for PT at once
     /// @dev Setting this to zero disables swapping
-    /// @param _maxAssetToSwap Maximum amount of asset to swap at once
-    function setMaxAssetToSwap(
-        uint256 _maxAssetToSwap
+    /// @param _maxPendleTokenToSwap Maximum amount of Pendle tokens to swap at once
+    function setMaxPendleTokenToSwap(
+        uint256 _maxPendleTokenToSwap
     ) external onlyManagement {
-        maxAssetToSwap = _maxAssetToSwap;
-    }
-
-    /// @notice Set the minimum idle asset required to trigger a swap
-    /// @dev Setting this to `type(uint256).max` disables swapping
-    /// @param _minAssetToSwap Minimum asset balance to swap
-    function setMinAssetToSwap(
-        uint256 _minAssetToSwap
-    ) external onlyManagement {
-        minAssetToSwap = _minAssetToSwap;
+        maxPendleTokenToSwap = _maxPendleTokenToSwap;
     }
 
     /// @notice Set the minimum time between swaps
@@ -198,15 +184,93 @@ contract PendlePTStrategy is BaseHealthCheck {
     ) external onlyManagement {
         require(IAuction(_auction).receiver() == address(this), "!receiver");
         require(IAuction(_auction).want() == address(asset), "!want");
-        auction = _auction;
+        auction = IAuction(_auction);
+    }
+
+    /// @notice Rollover to a new Pendle market
+    /// @dev Free all PT into Pendle token before updating market
+    /// @dev Does not buy PT in the new market, that is done during tends
+    /// @param _newMarket Address of the new Pendle market
+    function rollover(
+        address _newMarket
+    ) external onlyManagement {
+        // Free all PT into Pendle token
+        uint256 _toFree = balanceOfPT();
+
+        // PT --> Pendle token
+        _pendleSwapFrom(address(principalToken), address(PENDLE_TOKEN), _toFree, 0);
+
+        // Update market
+        _updateMarket(_newMarket);
     }
 
     // ===============================================================
     // Internal mutated functions
     // ===============================================================
 
+    /// @notice Update the Pendle market used by the strategy
+    /// @param _market The new Pendle market address
+    function _updateMarket(
+        address _market
+    ) internal {
+        // Get SY and PT tokens and validate the market
+        (IPendleStandardizedYield _newSY, IPendlePrincipalToken _newPT,) = IPendleMarket(_market).readTokens();
+        require(_newSY == SY, "!newSY");
+
+        // Set the new principal token with its market
+        _setMarket(address(_newPT), _market);
+
+        // Update the `principalToken`
+        principalToken = IPendlePrincipalToken(_newPT);
+
+        // Make sure market is not expired
+        require(!_isExpired(), "expired");
+
+        // Set the `guessMaxMultiplier`
+        uint256 _tokenDecimals = PENDLE_TOKEN.decimals();
+        uint256 _ptDecimals = _newPT.decimals();
+        guessMaxMultiplier = 2 * (10 ** (_tokenDecimals > _ptDecimals ? _tokenDecimals - _ptDecimals : 1));
+
+        // Approve PT for router
+        _newPT.forceApprove(pendleRouter, type(uint256).max);
+    }
+
+    /// @notice Convert asset to pendle token
+    /// @dev Override if asset is different from pendle token
+    /// @dev Default is `asset == pendleToken`, so no conversion needed
+    function _convertAssetToPendleToken(
+        uint256 /*_amount*/
+    ) internal virtual {
+        return;
+    }
+
+    /// @notice Convert pendle token to asset
+    /// @dev Override if asset is different from pendle token
+    /// @dev Default is `asset == pendleToken`, so no conversion needed
+    function _convertPendleTokenToAsset(
+        uint256 /*_amount*/
+    ) internal virtual {
+        return;
+    }
+
+    /// @notice Free amount of PT tokens into asset
+    /// @param _toFree The amount of PT tokens to free
+    function _freePT(
+        uint256 _toFree
+    ) internal {
+        if (_toFree == 0) return;
+
+        // PT --> Pendle token
+        _toFree = _pendleSwapFrom(address(principalToken), address(PENDLE_TOKEN), _toFree, 0);
+
+        // Pendle token --> asset
+        _convertPendleTokenToAsset(_toFree);
+    }
+
     /// @inheritdoc BaseStrategy
-    function _deployFunds(uint256 /*_amount*/) internal override {
+    function _deployFunds(
+        uint256 /*_amount*/
+    ) internal pure override {
         return; // Do nothing, funds are deployed during tend
     }
 
@@ -218,53 +282,51 @@ contract PendlePTStrategy is BaseHealthCheck {
         uint256 _totalInvested = _totalAssets - asset.balanceOf(address(this));
         uint256 _toFree = balanceOfPT() * _amount / _totalInvested;
 
+        // PT --> asset
         _freePT(_toFree);
     }
 
     /// @inheritdoc BaseStrategy
-    function _harvestAndReport() internal override returns (uint256 _totalAssets) {
+    function _harvestAndReport() internal view override returns (uint256 _totalAssets) {
         return asset.balanceOf(address(this)) + balanceOfPT();
     }
 
     /// @inheritdoc BaseStrategy
-    function _tend(uint256 /*_totalIdle*/) internal override {
+    function _tend(
+        uint256 _totalIdle
+    ) internal override {
         // Update last swap time
         lastSwap = block.timestamp;
 
-        // Empty swap data as we are using a supported token
-        PendleSwapData memory _swapData;
+        // Asset --> Pendle token
+        _convertAssetToPendleToken(_totalIdle);
 
-        // Asset --> PT
-        ROUTER.swapExactTokenForPtSimple( // @todo -- use swapExactTokenForPt
-            address(this), // receiver
-            address(LP), // market
-            0, // minPtOut
-            PendleTokenInput({
-                tokenIn: address(asset),
-                netTokenIn: Math.min(asset.balanceOf(address(this)), maxAssetToSwap),
-                tokenMintSy: address(asset),
-                pendleSwap: address(0),
-                swapData: _swapData
-            })
-        );
+        // Determine amount of Pendle token to swap to PT
+        uint256 _amount = Math.min(balanceOfPendleToken(), maxPendleTokenToSwap);
+
+        // Pendle token --> PT
+        _pendleSwapFrom(address(PENDLE_TOKEN), address(principalToken), _amount, 0);
     }
 
     /// @inheritdoc BaseStrategy
     function _tendTrigger() internal view override returns (bool) {
-        // Do nothing if market is expired
-        if (_isExpired()) return false;
-
         // Do nothing if strategy is shutdown
         if (TokenizedStrategy.isShutdown()) return false;
 
+        // Do nothing if `totalAssets` is zero
+        if (TokenizedStrategy.totalAssets() == 0) return false;
+
+        // Do nothing if market is expired
+        if (_isExpired()) return false;
+
         // Do nothing if swap is disabled
-        if (maxAssetToSwap == 0) return false;
+        if (maxPendleTokenToSwap == 0) return false;
 
         // Do nothing if if not enough time passed since last swap
         if (block.timestamp - lastSwap < minSwapInterval) return false;
 
-        // Do nothing if not enough asset to swap
-        if (asset.balanceOf(address(this)) < minAssetToSwap) return false;
+        // Do nothing if not enough Pendle tokens to swap
+        if (balanceOfPendleToken() < minAmountToSell) return false;
 
         // Otherwise, swap ahead!
         return true;
@@ -274,58 +336,11 @@ contract PendlePTStrategy is BaseHealthCheck {
     function _emergencyWithdraw(
         uint256 _amount
     ) internal override {
-        _freePT(Math.min(balanceOfPT(), _amount));
-    }
+        // PT --> Pendle token
+        _amount = _pendleSwapFrom(address(principalToken), address(PENDLE_TOKEN), Math.min(balanceOfPT(), _amount), 0);
 
-    /// @notice Free `_amount` of PT tokens into asset
-    /// @param _amount The amount of PT tokens to free
-    function _freePT(
-        uint256 _amount
-    ) internal {
-        if (_amount == 0) return;
-
-        // Initialize variable that stores amount of SY received from selling/redeeming PT
-        uint256 _sy;
-
-        // If active, market sell for SY. Otherwise redeem
-        if (!_isExpired()) {
-            // Empty limit order. Deal with it
-            PendleLimitOrderData memory limit;
-
-            // PT --> SY
-            (_sy,) = ROUTER.swapExactPtForSy(
-                address(this), // receiver
-                address(LP), // market
-                _amount, // exactPtIn
-                0, // minSyOut
-                limit
-            );
-        } else {
-            // PT must be transferred to the YT contract prior to calling `redeemPY`
-            PT.safeTransfer(address(YT), _amount);
-
-            // PT --> SY
-            _sy = YT.redeemPY(address(this));
-        }
-
-        // SY --> asset
-        _redeemSY(_sy);
-    }
-
-    /// @notice Redeem SY tokens to asset
-    function _redeemSY(
-        uint256 _amount
-    ) internal {
-        if (_amount == 0) return;
-
-        // SY --> asset
-        SY.redeem(
-            address(this), // receiver
-            _amount, // amountSharesToRedeem
-            address(asset), // tokenOut
-            0, // minTokenOut
-            false // burnFromInternalBalance
-        );
+        // Pendle token --> asset
+        _convertPendleTokenToAsset(Math.min(balanceOfPendleToken(), _amount));
     }
 
     // ===============================================================
@@ -335,7 +350,7 @@ contract PendlePTStrategy is BaseHealthCheck {
     /// @notice Check if the market has expired
     /// @return True if the market has expired, false otherwise
     function _isExpired() internal view returns (bool) {
-        return LP.isExpired();
+        return IPendleMarket(markets[address(principalToken)]).isExpired();
     }
 
 }

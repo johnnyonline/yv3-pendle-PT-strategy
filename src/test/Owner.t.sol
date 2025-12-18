@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.18;
 
 import {Setup, ERC20} from "./utils/Setup.sol";
@@ -28,24 +29,9 @@ contract OwnerTest is Setup {
         super.setUp();
     }
 
-    function test_allowDeposits() public {
-        assertFalse(strategy.openDeposits());
-
-        vm.prank(management);
-        strategy.allowDeposits();
-
-        assertTrue(strategy.openDeposits());
-    }
-
-    function test_allowDeposits_wrongCaller(
-        address _wrongCaller
-    ) public {
-        vm.assume(_wrongCaller != management);
-
-        vm.prank(_wrongCaller);
-        vm.expectRevert("!management");
-        strategy.allowDeposits();
-    }
+    // ===============================================================
+    // allowWithdrawals
+    // ===============================================================
 
     function test_allowWithdrawals() public {
         assertFalse(strategy.openWithdrawals());
@@ -65,6 +51,10 @@ contract OwnerTest is Setup {
         vm.expectRevert("!management");
         strategy.allowWithdrawals();
     }
+
+    // ===============================================================
+    // setAllowed
+    // ===============================================================
 
     function test_setAllowed(
         address _address
@@ -89,39 +79,55 @@ contract OwnerTest is Setup {
         strategy.setAllowed(_wrongCaller);
     }
 
-    function test_setShouldClaimYT() public {
-        assertFalse(strategy.shouldClaimYT());
+    // ===============================================================
+    // setMaxPendleTokenToSwap
+    // ===============================================================
+
+    function test_setMaxPendleTokenToSwap(
+        uint256 _maxPendleTokenToSwap
+    ) public {
         vm.prank(management);
-        strategy.setShouldClaimYT(true);
-        assertTrue(strategy.shouldClaimYT());
+        strategy.setMaxPendleTokenToSwap(_maxPendleTokenToSwap);
+
+        assertEq(strategy.maxPendleTokenToSwap(), _maxPendleTokenToSwap);
     }
 
-    function test_setShouldClaimYT_wrongCaller(
+    function test_setMaxPendleTokenToSwap_wrongCaller(
         address _wrongCaller
     ) public {
         vm.assume(_wrongCaller != management);
 
         vm.prank(_wrongCaller);
         vm.expectRevert("!management");
-        strategy.setShouldClaimYT(true);
+        strategy.setMaxPendleTokenToSwap(0);
     }
 
-    function test_setMaxYTToSell(
-        uint256 _maxYTToSell
+    // ===============================================================
+    // setMinSwapInterval
+    // ===============================================================
+
+    function test_setMinSwapInterval(
+        uint256 _minSwapInterval
     ) public {
         vm.prank(management);
-        strategy.setMaxYTToSell(_maxYTToSell);
+        strategy.setMinSwapInterval(_minSwapInterval);
+
+        assertEq(strategy.minSwapInterval(), _minSwapInterval);
     }
 
-    function test_setMaxYTToSell_wrongCaller(
+    function test_setMinSwapInterval_wrongCaller(
         address _wrongCaller
     ) public {
         vm.assume(_wrongCaller != management);
 
         vm.prank(_wrongCaller);
         vm.expectRevert("!management");
-        strategy.setMaxYTToSell(0);
+        strategy.setMinSwapInterval(0);
     }
+
+    // ===============================================================
+    // setAuction
+    // ===============================================================
 
     function test_setAuction() public returns (address _auction) {
         assertEq(address(0), strategy.auction());
@@ -146,6 +152,7 @@ contract OwnerTest is Setup {
 
     function test_setAuction_wrongWant() public {
         address _auction = auctionFactory.createNewAuction(tokenAddrs["YFI"], address(strategy));
+
         vm.prank(management);
         vm.expectRevert("!want");
         strategy.setAuction(_auction);
@@ -163,6 +170,10 @@ contract OwnerTest is Setup {
         strategy.setAuction(_auction);
     }
 
+    // ===============================================================
+    // availableDepositLimit
+    // ===============================================================
+
     function test_availableDepositLimit_setAllowed(
         address _owner
     ) public {
@@ -176,24 +187,27 @@ contract OwnerTest is Setup {
         assertEq(strategy.availableDepositLimit(_owner), type(uint256).max);
     }
 
-    function test_availableDepositLimit_openDeposits(
+    function test_availableDepositLimit_afterExpiry(
         address _owner
     ) public {
-        vm.assume(_owner != user);
-
-        assertEq(strategy.availableDepositLimit(_owner), 0);
-
         vm.prank(management);
-        strategy.allowDeposits();
+        strategy.setAllowed(_owner);
 
         assertEq(strategy.availableDepositLimit(_owner), type(uint256).max);
+
+        // Expire market
+        _simulateMarketExpiration();
+
+        assertEq(strategy.availableDepositLimit(_owner), 0);
     }
 
-    function test_availableWithdrawLimit_setAllowed(
+    // ===============================================================
+    // availableWithdrawLimit
+    // ===============================================================
+
+    function test_availableWithdrawLimit_openWithdrawals(
         address _owner
     ) public {
-        vm.assume(_owner != user);
-
         assertEq(strategy.availableWithdrawLimit(_owner), 0);
 
         vm.prank(management);
@@ -205,8 +219,6 @@ contract OwnerTest is Setup {
     function test_availableWithdrawLimit_afterExpiry(
         address _owner
     ) public {
-        vm.assume(_owner != user);
-
         assertEq(strategy.availableWithdrawLimit(_owner), 0);
 
         // Expire market
@@ -214,6 +226,10 @@ contract OwnerTest is Setup {
 
         assertEq(strategy.availableWithdrawLimit(_owner), type(uint256).max);
     }
+
+    // ===============================================================
+    // kickAuction
+    // ===============================================================
 
     function test_kickAuction(
         uint256 _amount
@@ -281,9 +297,6 @@ contract OwnerTest is Setup {
 
         vm.expectRevert("!token");
         strategy.kickAuction(PT);
-
-        vm.expectRevert("!token");
-        strategy.kickAuction(YT);
 
         vm.expectRevert("!token");
         strategy.kickAuction(address(asset));

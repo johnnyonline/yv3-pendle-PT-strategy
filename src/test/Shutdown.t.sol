@@ -22,14 +22,13 @@ contract ShutdownTest is Setup {
 
         assertEq(strategy.totalAssets(), _amount, "!totalAssets");
 
-        // Earn Interest
-        skip(1 days);
+        // Tend to swap into PT
+        vm.prank(keeper);
+        strategy.tend();
 
         // Shutdown the strategy
         vm.prank(emergencyAdmin);
         strategy.shutdownStrategy();
-
-        assertEq(strategy.totalAssets(), _amount, "!totalAssets");
 
         // Make sure we can still withdraw the full amount
         uint256 balanceBefore = asset.balanceOf(user);
@@ -52,18 +51,22 @@ contract ShutdownTest is Setup {
 
         assertEq(strategy.totalAssets(), _amount, "!totalAssets");
 
-        // Earn Interest
-        skip(1 days);
+        // Tend to swap into PT
+        vm.prank(keeper);
+        strategy.tend();
+
+        assertGt(strategy.balanceOfPT(), 0, "!balanceOfPT");
 
         // Shutdown the strategy
         vm.prank(emergencyAdmin);
         strategy.shutdownStrategy();
 
-        assertEq(strategy.totalAssets(), _amount, "!totalAssets");
-
-        // should be able to pass uint 256 max and not revert.
+        // Emergency withdraw all PT
         vm.prank(emergencyAdmin);
         strategy.emergencyWithdraw(type(uint256).max);
+
+        // PT should be converted back to asset
+        assertEq(strategy.balanceOfPT(), 0, "!balanceOfPT");
 
         // Make sure we can still withdraw the full amount
         uint256 balanceBefore = asset.balanceOf(user);
@@ -75,8 +78,5 @@ contract ShutdownTest is Setup {
         // Make sure user did not lose more than max
         assertApproxEqRel(asset.balanceOf(user), balanceBefore + _amount, MAX_LOSS, "!final balance");
     }
-
-    // TODO: Add tests for any emergency function added.
-
 
 }

@@ -11,6 +11,9 @@
       "rev": "bd325d56b4c62c9c5c1aff048c37c6bb18ac0290"
     }
   },
+  "lib/pendle-core-v2-public": {
+    "rev": "ba53685767bc16e070136b9dbfe02a5dd6258c61"
+  },
   "lib/tokenized-strategy": {
     "rev": "82806289f967590c4efbf6bc3d237e4e7f0a0966"
   },
