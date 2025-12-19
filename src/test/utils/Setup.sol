@@ -92,9 +92,7 @@ contract Setup is Test, IEvents {
     uint256 public constant MAX_LOSS = 1e16; // 1%
 
     function setUp() public virtual {
-        // uint256 _blockNumber = 24_011_022; // Caching for faster tests
-        // 23646691
-        uint256 _blockNumber = 23655360; // Caching for faster tests
+        uint256 _blockNumber = 24_011_022; // Caching for faster tests
         vm.selectFork(vm.createFork(vm.envString("ETH_RPC_URL"), _blockNumber));
 
         _setTokenAddrs();
@@ -215,6 +213,8 @@ contract Setup is Test, IEvents {
         tokenAddrs["USDC"] = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
         tokenAddrs["USDe"] = 0x4c9EDD5852cd905f086C759E8383e09bff1E68B3;
         tokenAddrs["USDaf"] = 0x9Cf12ccd6020b6888e4D4C4e4c7AcA33c1eB91f8;
+        tokenAddrs["BOLD"] = 0x6440f144b7e50D6a8439336510312d2F54beB01D;
+        tokenAddrs["yBOLD"] = 0x9F4330700a36B29952869fac9b33f45EEdd8A3d8;
     }
 
 }

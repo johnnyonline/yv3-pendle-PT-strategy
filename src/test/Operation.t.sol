@@ -35,22 +35,22 @@ contract OperationTest is Setup {
         assertEq(strategy.balanceOfPendleToken(), 0);
     }
 
-    // @todo
-    // function test_invalidDeployment() public {
-    //     vm.expectRevert("!valid");
-    //     strategyFactory.newStrategy(tokenAddrs["YFI"], LP, "Tokenized Strategy");
+    function test_invalidDeployment() public {
+        // Invalid pendleToken (not valid for SY)
+        vm.expectRevert("!tokenOut");
+        strategyFactory.newStrategy(address(asset), tokenAddrs["YFI"], LP, "Tokenized Strategy");
 
-    //     address wrongMarket = 0x83B2C0b470Ff5f2a60D2BF2AE109766E8bb3E862; // ysyBOLD market
+        // Wrong market (different SY)
+        address wrongMarket = 0x307c15f808914Df5a5DbE17E5608f84953fFa023; // cUSD market
+        vm.expectRevert("!tokenOut");
+        strategyFactory.newStrategy(address(asset), address(asset), wrongMarket, "Tokenized Strategy");
 
-    //     vm.expectRevert("!valid");
-    //     strategyFactory.newStrategy(address(asset), wrongMarket, "Tokenized Strategy");
+        // Expire market
+        _simulateMarketExpiration();
 
-    //     // Expire market
-    //     _simulateMarketExpiration();
-
-    //     vm.expectRevert("expired");
-    //     strategyFactory.newStrategy(address(asset), LP, "Tokenized Strategy");
-    // }
+        vm.expectRevert("expired");
+        strategyFactory.newStrategy(address(asset), address(asset), LP, "Tokenized Strategy");
+    }
 
     function test_operation(
         uint256 _amount
