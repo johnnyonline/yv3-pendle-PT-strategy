@@ -6,6 +6,8 @@ import {
     IPPrincipalToken as IPendlePrincipalToken
 } from "@pendle-core-v2/interfaces/IPMarket.sol";
 
+import {IPPYLpOracle as IPendleOracle} from "@pendle-core-v2/interfaces/IPPYLpOracle.sol";
+
 import "forge-std/console2.sol";
 import {Setup, ERC20, IStrategyInterface, StrategyFactory} from "./utils/Setup.sol";
 
@@ -24,7 +26,7 @@ contract RolloverTest is Setup {
 
         _setTokenAddrs();
 
-        asset = ERC20(tokenAddrs["BOLD"]);
+        asset = ERC20(tokenAddrs["yBOLD"]);
 
         // Get old PT address
         (, IPendlePrincipalToken _oldPT,) = IPendleMarket(OLD_MARKET).readTokens();
@@ -33,11 +35,17 @@ contract RolloverTest is Setup {
         // Mock isExpired to return false so we can deploy
         vm.mockCall(OLD_MARKET, abi.encodeWithSelector(IPendleMarket.isExpired.selector), abi.encode(false));
 
+        // Mock oracle state to be ready
+        vm.mockCall(ORACLE, abi.encodeWithSelector(IPendleOracle.getOracleState.selector), abi.encode(false, 165, true));
+
         strategyFactory = new StrategyFactory(management, performanceFeeRecipient, keeper, emergencyAdmin);
 
         strategy = IStrategyInterface(_setUpStrategy());
 
         factory = strategy.FACTORY();
+
+        // Initialize the oracle observations cardinality for the market used in tests
+        IPendleMarket(NEW_MARKET).increaseObservationsCardinalityNext(165);
 
         vm.prank(management);
         strategy.allowWithdrawals();
@@ -45,7 +53,9 @@ contract RolloverTest is Setup {
 
     function _setUpStrategy() internal returns (address) {
         IStrategyInterface _strategy = IStrategyInterface(
-            address(strategyFactory.newStrategy(address(asset), address(asset), OLD_MARKET, "Tokenized Strategy"))
+            address(
+                strategyFactory.newStrategy(address(asset), address(asset), OLD_MARKET, ORACLE, "Tokenized Strategy")
+            )
         );
 
         vm.startPrank(management);
@@ -98,6 +108,38 @@ contract RolloverTest is Setup {
         vm.prank(_wrongCaller);
         vm.expectRevert("!management");
         strategy.rollover(NEW_MARKET);
+    }
+
+    function test_rollover_emergencyWithdraw(
+        uint256 _amount
+    ) public {
+        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
+
+        // Airdrop old PTs to strategy
+        airdrop(ERC20(oldPT), address(strategy), _amount);
+
+        // Clear mock to allow real expiry check
+        vm.clearMockedCalls();
+
+        // Rollover to new market (assets now in pendle token, not PT)
+        vm.prank(management);
+        strategy.rollover(NEW_MARKET);
+
+        assertEq(strategy.balanceOfPT(), 0, "!ptAfter");
+        assertGt(strategy.balanceOfPendleToken(), 0, "!pendleToken");
+
+        // Shutdown the strategy
+        vm.prank(emergencyAdmin);
+        strategy.shutdownStrategy();
+
+        // Emergency withdraw while assets are in pendle token
+        vm.prank(emergencyAdmin);
+        strategy.emergencyWithdraw(type(uint256).max);
+
+        // All tokens should be in asset
+        assertEq(strategy.balanceOfPT(), 0, "!ptFinal");
+        // assertEq(strategy.balanceOfPendleToken(), 0, "!pendleTokenFinal"); // IGNORED bc pendleToken is the same as asset
+        assertGt(asset.balanceOf(address(strategy)), 0, "!assetFinal");
     }
 
 }

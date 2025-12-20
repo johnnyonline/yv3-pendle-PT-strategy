@@ -29,6 +29,7 @@ contract Setup is Test, IEvents {
 
     // Contract addresses.
     address public constant ROUTER = 0x888888888889758F76e7103c6CbF23ABbF58F946;
+    address public constant ORACLE = 0x5542be50420E88dd7D5B4a3D488FA6ED82F6DAc2; // pyYtLpOracle mainnet
 
     // USDE-MAINNET-FAB2026 ($2.63M LP TVL @ `24_011_022` block)
     address public constant LP = 0xAADBC004DAcF10e1fdbd87ca1a40ecAF77CC5B02;
@@ -110,6 +111,9 @@ contract Setup is Test, IEvents {
 
         factory = strategy.FACTORY();
 
+        // Initialize the oracle observations cardinality for the market used in tests
+        IPendleMarket(LP).increaseObservationsCardinalityNext(165);
+
         // label all the used addresses for traces
         vm.label(keeper, "keeper");
         vm.label(factory, "factory");
@@ -122,7 +126,7 @@ contract Setup is Test, IEvents {
     function setUpStrategy() public returns (address) {
         // we save the strategy as a IStrategyInterface to give it the needed interface
         IStrategyInterface _strategy = IStrategyInterface(
-            address(strategyFactory.newStrategy(address(asset), address(asset), LP, "Tokenized Strategy"))
+            address(strategyFactory.newStrategy(address(asset), address(asset), LP, ORACLE, "Tokenized Strategy"))
         );
 
         vm.startPrank(management);

@@ -6,3 +6,5 @@ import {
     IPPrincipalToken as IPendlePrincipalToken,
     IStandardizedYield as IPendleStandardizedYield
 } from "@pendle-core-v2/interfaces/IPMarket.sol";
+
+import {IPPYLpOracle as IPendleOracle} from "@pendle-core-v2/interfaces/IPPYLpOracle.sol";

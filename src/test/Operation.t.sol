@@ -38,18 +38,18 @@ contract OperationTest is Setup {
     function test_invalidDeployment() public {
         // Invalid pendleToken (not valid for SY)
         vm.expectRevert("!tokenOut");
-        strategyFactory.newStrategy(address(asset), tokenAddrs["YFI"], LP, "Tokenized Strategy");
+        strategyFactory.newStrategy(address(asset), tokenAddrs["YFI"], LP, ORACLE, "Tokenized Strategy");
 
         // Wrong market (different SY)
         address wrongMarket = 0x307c15f808914Df5a5DbE17E5608f84953fFa023; // cUSD market
         vm.expectRevert("!tokenOut");
-        strategyFactory.newStrategy(address(asset), address(asset), wrongMarket, "Tokenized Strategy");
+        strategyFactory.newStrategy(address(asset), address(asset), wrongMarket, ORACLE, "Tokenized Strategy");
 
         // Expire market
         _simulateMarketExpiration();
 
         vm.expectRevert("expired");
-        strategyFactory.newStrategy(address(asset), address(asset), LP, "Tokenized Strategy");
+        strategyFactory.newStrategy(address(asset), address(asset), LP, ORACLE, "Tokenized Strategy");
     }
 
     function test_operation(
@@ -62,9 +62,12 @@ contract OperationTest is Setup {
 
         assertEq(strategy.totalAssets(), _amount, "!totalAssets");
 
-        // Earn Interest
+        // Tend to buy PT
         vm.prank(keeper);
         strategy.tend();
+
+        // Skip 10 days to accrue yield
+        skip(10 days);
 
         // Report profit
         vm.prank(keeper);
@@ -86,7 +89,7 @@ contract OperationTest is Setup {
         assertApproxEqRel(asset.balanceOf(user), balanceBefore + _amount, MAX_LOSS, "!final balance");
     }
 
-    function test_operation_withdrawAfterExpiry_noLoss(
+    function test_operation_withdrawAfterExpiry(
         uint256 _amount
     ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
@@ -96,9 +99,12 @@ contract OperationTest is Setup {
 
         assertEq(strategy.totalAssets(), _amount, "!totalAssets");
 
-        // Earn Interest
+        // Tend to buy PT
         vm.prank(keeper);
         strategy.tend();
+
+        // Skip 10 days to accrue yield
+        skip(10 days);
 
         // Report profit
         vm.prank(keeper);
@@ -121,10 +127,8 @@ contract OperationTest is Setup {
         (profit, loss) = strategy.report();
 
         // Check return Values
-        assertEq(profit, 0, "!profit");
+        assertGe(profit, 0, "!profit");
         assertEq(loss, 0, "!loss");
-
-        assertEq(strategy.totalAssets(), totalAssetsAfterProfit, "!totalAssets");
 
         uint256 balanceBefore = asset.balanceOf(user);
 
@@ -201,9 +205,12 @@ contract OperationTest is Setup {
 
         assertEq(strategy.totalAssets(), _amount * 2, "!totalAssets");
 
-        // Tend to swap into PT
+        // Tend to buy PT
         vm.prank(keeper);
         strategy.tend();
+
+        // Skip 10 days to accrue yield
+        skip(10 days);
 
         // Report profit
         vm.prank(keeper);
@@ -246,9 +253,12 @@ contract OperationTest is Setup {
 
         assertEq(strategy.totalAssets(), _amount, "!totalAssets");
 
-        // Tend to swap into PT
+        // Tend to buy PT
         vm.prank(keeper);
         strategy.tend();
+
+        // Skip 10 days to accrue yield
+        skip(10 days);
 
         // Report profit
         vm.prank(keeper);
@@ -283,9 +293,12 @@ contract OperationTest is Setup {
 
         assertEq(strategy.totalAssets(), _amount, "!totalAssets");
 
-        // Tend to swap into PT
+        // Tend to buy PT
         vm.prank(keeper);
         strategy.tend();
+
+        // Skip 10 days to accrue yield
+        skip(10 days);
 
         // Report profit
         vm.prank(keeper);

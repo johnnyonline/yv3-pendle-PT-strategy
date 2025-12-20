@@ -34,17 +34,19 @@ contract StrategyFactory {
      * @param _asset The underlying asset for the strategy to use.
      * @param _pendleToken The Pendle token used for entering/exiting the market.
      * @param _market The market address.
+     * @param _oracle The oracle address.
      * @return . The address of the new strategy.
      */
     function newStrategy(
         address _asset,
         address _pendleToken,
         address _market,
+        address _oracle,
         string calldata _name
     ) external virtual returns (address) {
         // tokenized strategies available setters.
         IStrategyInterface _newStrategy =
-            IStrategyInterface(address(new Strategy(_asset, _pendleToken, _market, _name)));
+            IStrategyInterface(address(new Strategy(_asset, _pendleToken, _market, _oracle, _name)));
 
         _newStrategy.setPerformanceFeeRecipient(performanceFeeRecipient);
 

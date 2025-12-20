@@ -7,7 +7,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IAuction} from "./interfaces/IAuction.sol";
-import {IPendleMarket, IPendlePrincipalToken, IPendleStandardizedYield} from "./interfaces/IPendle.sol";
+import {IPendleOracle, IPendleMarket, IPendlePrincipalToken, IPendleStandardizedYield} from "./interfaces/IPendle.sol";
 
 contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
 
@@ -39,6 +39,7 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     uint256 public lastSwap;
 
     /// @notice Addresses allowed to deposit when openDeposits is false
+    /// @dev Generally this strategy should be used by a single depositor only
     mapping(address => bool) public allowed;
 
     // ===============================================================
@@ -53,6 +54,15 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     /// @notice Pendle Standardized Yield Token
     IPendleStandardizedYield public immutable SY;
 
+    /// @notice The Pendle pyYtLpOracle oracle
+    IPendleOracle public immutable ORACLE;
+
+    /// @notice Duration for TWAP calculations in the Pendle oracle
+    uint32 private TWAP_DURATION = 1800; // 30 minutes
+
+    /// @notice The WAD constant
+    uint256 private constant _WAD = 1e18;
+
     // ===============================================================
     // Constructor
     // ===============================================================
@@ -60,11 +70,13 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     /// @param _asset The underlying asset
     /// @param _pendleToken The Pendle token used for entering/exiting the market
     /// @param _market The market address
+    /// @param _oracle The pyYtLpOracle oracle address
     /// @param _name The name
     constructor(
         address _asset,
         address _pendleToken,
         address _market,
+        address _oracle,
         string memory _name
     ) BaseHealthCheck(_asset, _name) {
         // Get `SY` and validate `pendleToken`
@@ -72,12 +84,20 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
         require(SY.isValidTokenOut(_pendleToken), "!tokenOut");
         require(SY.isValidTokenIn(_pendleToken), "!tokenIn");
 
-        // Set default values
-        maxPendleTokenToSwap = type(uint256).max;
-        minSwapInterval = type(uint256).max;
+        // Make sure Pendle token is SY's underlying asset
+        // See `_PTInPendleToken` for more details
+        (, address _syAsset,) = SY.assetInfo();
+        require(_syAsset == _pendleToken, "!pendleToken");
+
+        // Set oracle
+        ORACLE = IPendleOracle(_oracle);
 
         // Set Pendle token
         PENDLE_TOKEN = ERC20(_pendleToken);
+
+        // Set default values
+        maxPendleTokenToSwap = type(uint256).max;
+        minSwapInterval = type(uint256).max;
 
         // Update market
         _updateMarket(_market);
@@ -190,6 +210,9 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     /// @notice Rollover to a new Pendle market
     /// @dev Free all PT into Pendle token before updating market
     /// @dev Does not buy PT in the new market, that is done during tends
+    /// @dev To withdraw during rollover (while assets are in `pendleToken` and `pendleToken != asset`), 
+    ///      `emergencyWithdraw` should be used, so before calling this function, make sure no depositor
+    ///      wants to leave until after the rollover is complete
     /// @param _newMarket Address of the new Pendle market
     function rollover(
         address _newMarket
@@ -213,6 +236,18 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     function _updateMarket(
         address _market
     ) internal {
+        // Check oracle is ready
+        (bool _increaseCardinalityRequired,, bool _oldestObservationSatisfied) =
+            ORACLE.getOracleState(_market, TWAP_DURATION);
+
+        // If reverts, Call market.increaseObservationsCardinalityNext(cardinalityRequired) and wait
+        // for at least the `TWAP_DURATION` to allow data population.
+        // On Ethereum, for twap duration of 1800 seconds, `cardinalityRequired` can be 165
+        require(!_increaseCardinalityRequired, "increaseCardinalityRequired");
+
+        // Ser, wait for at least the `TWAP_DURATION` please
+        require(_oldestObservationSatisfied, "!oldestObservationNotSatisfied");
+
         // Get SY and PT tokens and validate the market
         (IPendleStandardizedYield _newSY, IPendlePrincipalToken _newPT,) = IPendleMarket(_market).readTokens();
         require(_newSY == SY, "!newSY");
@@ -288,7 +323,11 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
 
     /// @inheritdoc BaseStrategy
     function _harvestAndReport() internal view override returns (uint256 _totalAssets) {
-        return asset.balanceOf(address(this)) + balanceOfPT();
+        // Total Pendle token value (balance + PT value)
+        uint256 _totalPendleToken = balanceOfPendleToken() + _PTInPendleToken(balanceOfPT());
+
+        // Total assets = asset balance + Pendle token and PT value in asset
+        return asset.balanceOf(address(this)) + _pendleTokenInAsset(_totalPendleToken);
     }
 
     /// @inheritdoc BaseStrategy
@@ -351,6 +390,32 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     /// @return True if the market has expired, false otherwise
     function _isExpired() internal view returns (bool) {
         return IPendleMarket(markets[address(principalToken)]).isExpired();
+    }
+
+    /// @notice Price PT in Pendle token
+    /// @dev `_price` is always in WAD format
+    /// @dev `pendleToken` must be SY's underlying asset for this to work
+    /// @param _amount Amount of PT to price
+    /// @return Amount of Pendle token equivalent
+    function _PTInPendleToken(
+        uint256 _amount
+    ) internal view returns (uint256) {
+        if (_amount == 0) return 0;
+
+        // PT --> Pendle token (directly using SY rates)
+        uint256 _price = ORACLE.getPtToAssetRate(markets[address(principalToken)], TWAP_DURATION);
+
+        return _amount * _price / _WAD;
+    }
+
+    /// @notice Price Pendle token in asset
+    /// @dev Override if asset is different from pendle token
+    /// @param _pendleTokenAmount Amount of Pendle token to price
+    /// @return Amount of asset equivalent
+    function _pendleTokenInAsset(
+        uint256 _pendleTokenAmount
+    ) internal view virtual returns (uint256) {
+        return _pendleTokenAmount;
     }
 
 }
