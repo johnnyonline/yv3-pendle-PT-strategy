@@ -220,6 +220,7 @@ contract Setup is Test, IEvents {
         tokenAddrs["USDaf"] = 0x9Cf12ccd6020b6888e4D4C4e4c7AcA33c1eB91f8;
         tokenAddrs["BOLD"] = 0x6440f144b7e50D6a8439336510312d2F54beB01D;
         tokenAddrs["yBOLD"] = 0x9F4330700a36B29952869fac9b33f45EEdd8A3d8;
+        tokenAddrs["ysyBOLD"] = 0x23346B04a7f55b8760E5860AA5A77383D63491cD;
     }
 
 }

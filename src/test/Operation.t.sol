@@ -22,6 +22,7 @@ contract OperationTest is Setup {
         assertEq(strategy.management(), management);
         assertEq(strategy.performanceFeeRecipient(), performanceFeeRecipient);
         assertEq(strategy.keeper(), keeper);
+        assertEq(strategy.minAmountToSell(), 1e15);
         assertFalse(strategy.allowed(address(0)));
         assertTrue(strategy.allowed(user));
         assertTrue(strategy.openWithdrawals()); // Open on setUp
@@ -427,11 +428,13 @@ contract OperationTest is Setup {
     function test_tendTrigger_returnsFalse_whenIntervalNotPassed(
         uint256 _amount
     ) public {
-        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
+        vm.assume(_amount > minFuzzAmount * 2 && _amount < maxFuzzAmount);
 
         // Setup: enable tend trigger with interval
-        vm.prank(management);
+        vm.startPrank(management);
         strategy.setMinSwapInterval(1 days);
+        strategy.setMaxPendleTokenToSwap(_amount / 2);
+        vm.stopPrank();
 
         // Deposit
         mintAndDepositIntoStrategy(strategy, user, _amount);
@@ -446,17 +449,17 @@ contract OperationTest is Setup {
 
         // Trigger should be false (interval not passed)
         (trigger,) = strategy.tendTrigger();
-        assertFalse(trigger);
+        assertFalse(trigger, "asd");
 
         // Skip half the interval
         skip(12 hours);
         (trigger,) = strategy.tendTrigger();
-        assertFalse(trigger);
+        assertFalse(trigger, "zxc");
 
         // Skip past interval
         skip(13 hours);
         (trigger,) = strategy.tendTrigger();
-        assertTrue(trigger);
+        assertTrue(trigger, "qwe");
     }
 
     function test_tendTrigger_returnsFalse_whenNoFunds() public {

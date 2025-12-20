@@ -102,6 +102,9 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
         // Update market
         _updateMarket(_market);
 
+        // Set min amount to sell to 0.001 unit of principal token
+        _setMinAmountToSell(10 ** (principalToken.decimals() - 3));
+
         // Approve Pendle token for router
         PENDLE_TOKEN.forceApprove(pendleRouter, type(uint256).max);
     }
@@ -218,13 +221,13 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     /// @notice Rollover to a new Pendle market
     /// @dev Free all PT into Pendle token before updating market
     /// @dev Does not buy PT in the new market, that is done during tends
-    /// @dev To withdraw during rollover (while assets are in `pendleToken` and `pendleToken != asset`),
-    ///      `emergencyWithdraw` should be used, so before calling this function, make sure no depositor
-    ///      wants to leave until after the rollover is complete
     /// @param _newMarket Address of the new Pendle market
     function rollover(
         address _newMarket
     ) external onlyManagement {
+        // Make sure market expired
+        require(_isExpired(), "!expired");
+
         // Free all PT into Pendle token
         uint256 _toFree = balanceOfPT();
 
@@ -250,10 +253,10 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
 
         // If reverts, Call market.increaseObservationsCardinalityNext(cardinalityRequired) and wait
         // for at least the `_TWAP_DURATION` to allow data population.
-        // On Ethereum, for twap duration of 1800 seconds, `cardinalityRequired` can be 165
+        // On Ethereum, for twap duration of `1800` seconds, `cardinalityRequired` can be `165`
         require(!_increaseCardinalityRequired, "increaseCardinalityRequired");
 
-        // Ser, wait for at least the `_TWAP_DURATION` please
+        // Ser, wait for at least `_TWAP_DURATION` please
         require(_oldestObservationSatisfied, "!oldestObservationNotSatisfied");
 
         // Get SY and PT tokens and validate the market
@@ -296,20 +299,6 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
         return;
     }
 
-    /// @notice Free amount of PT tokens into asset
-    /// @param _toFree The amount of PT tokens to free
-    function _freePT(
-        uint256 _toFree
-    ) internal {
-        if (_toFree == 0) return;
-
-        // PT --> Pendle token
-        _toFree = _pendleSwapFrom(address(principalToken), address(PENDLE_TOKEN), _toFree, 0);
-
-        // Pendle token --> asset
-        _convertPendleTokenToAsset(_toFree);
-    }
-
     /// @inheritdoc BaseStrategy
     function _deployFunds(
         uint256 /*_amount*/
@@ -321,12 +310,22 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     function _freeFunds(
         uint256 _amount
     ) internal override {
+        // Cache Pendle token balance before freeing PT
+        uint256 _pendleTokenBalanceBefore = balanceOfPendleToken();
+
+        // Free proportional amount of PT
         uint256 _totalAssets = TokenizedStrategy.totalAssets();
         uint256 _totalInvested = _totalAssets - asset.balanceOf(address(this));
         uint256 _toFree = balanceOfPT() * _amount / _totalInvested;
 
-        // PT --> asset
-        _freePT(_toFree);
+        // PT --> Pendle token
+        _toFree = _pendleSwapFrom(address(principalToken), address(PENDLE_TOKEN), _toFree, 0);
+
+        // If asset is different from Pendle token, we need to free the proportional amount of Pendle token too
+        if (address(asset) != address(PENDLE_TOKEN)) _toFree += _pendleTokenBalanceBefore * _amount / _totalInvested;
+
+        // Pendle token --> asset
+        _convertPendleTokenToAsset(_toFree);
     }
 
     /// @inheritdoc BaseStrategy

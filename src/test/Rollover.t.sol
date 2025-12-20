@@ -147,12 +147,25 @@ contract RolloverTest is Setup {
     }
 
     function test_rollover_wrongSY() public {
+        // Clear mock to allow real expiry check
+        vm.clearMockedCalls();
+
         // Try to rollover to a market with different SY (cUSD market)
         address wrongMarket = 0x307c15f808914Df5a5DbE17E5608f84953fFa023;
+
+        // Mock oracle state to be ready for wrong market
+        vm.mockCall(ORACLE, abi.encodeWithSelector(IPendleOracle.getOracleState.selector), abi.encode(false, 165, true));
 
         vm.prank(management);
         vm.expectRevert("!newSY");
         strategy.rollover(wrongMarket);
+    }
+
+    function test_rollover_notExpired() public {
+        // Market is not expired (mock still active)
+        vm.prank(management);
+        vm.expectRevert("!expired");
+        strategy.rollover(NEW_MARKET);
     }
 
 }
