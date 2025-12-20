@@ -96,8 +96,8 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
         PENDLE_TOKEN = ERC20(_pendleToken);
 
         // Set default values
-        maxPendleTokenToSwap = type(uint256).max;
-        minSwapInterval = type(uint256).max;
+        maxPendleTokenToSwap = type(uint256).max; // No limit by default
+        minSwapInterval = type(uint256).max; // No automatic swapping by default
 
         // Update market
         _updateMarket(_market);
