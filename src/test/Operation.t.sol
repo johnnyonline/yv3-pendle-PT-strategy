@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.18;
 
+import {IPPYLpOracle as IPendleOracle} from "@pendle-core-v2/interfaces/IPPYLpOracle.sol";
+
 import "forge-std/console2.sol";
 import {Setup, ERC20} from "./utils/Setup.sol";
 
@@ -36,7 +38,7 @@ contract OperationTest is Setup {
     }
 
     function test_invalidDeployment() public {
-        // Invalid pendleToken (not valid for SY)
+        // Invalid pendleToken (not supported)
         vm.expectRevert("!tokenOut");
         strategyFactory.newStrategy(address(asset), tokenAddrs["YFI"], LP, ORACLE, "Tokenized Strategy");
 
@@ -49,6 +51,24 @@ contract OperationTest is Setup {
         _simulateMarketExpiration();
 
         vm.expectRevert("expired");
+        strategyFactory.newStrategy(address(asset), address(asset), LP, ORACLE, "Tokenized Strategy");
+    }
+
+    function test_invalidDeployment_oracleNotReady() public {
+        // Mock oracle: increaseCardinalityRequired = true
+        vm.mockCall(ORACLE, abi.encodeWithSelector(IPendleOracle.getOracleState.selector), abi.encode(true, 165, true));
+
+        vm.expectRevert("increaseCardinalityRequired");
+        strategyFactory.newStrategy(address(asset), address(asset), LP, ORACLE, "Tokenized Strategy");
+
+        vm.clearMockedCalls();
+
+        // Mock oracle: oldestObservationSatisfied = false
+        vm.mockCall(
+            ORACLE, abi.encodeWithSelector(IPendleOracle.getOracleState.selector), abi.encode(false, 165, false)
+        );
+
+        vm.expectRevert("!oldestObservationNotSatisfied");
         strategyFactory.newStrategy(address(asset), address(asset), LP, ORACLE, "Tokenized Strategy");
     }
 
@@ -464,6 +484,27 @@ contract OperationTest is Setup {
         // All conditions met
         (bool trigger,) = strategy.tendTrigger();
         assertTrue(trigger);
+    }
+
+    function test_tendTrigger_returnsFalse_whenBelowMinAmountToSell(
+        uint256 _amount
+    ) public {
+        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
+
+        // Setup: enable tend trigger
+        vm.prank(management);
+        strategy.setMinSwapInterval(0);
+
+        // Set minAmountToSell to be greater than deposit amount
+        vm.prank(management);
+        strategy.setMinAmountToSell(_amount + 1);
+
+        // Deposit amount (below minAmountToSell)
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        // Trigger should be false (below minAmountToSell)
+        (bool trigger,) = strategy.tendTrigger();
+        assertFalse(trigger);
     }
 
 }

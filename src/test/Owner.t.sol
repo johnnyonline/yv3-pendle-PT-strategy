@@ -126,6 +126,29 @@ contract OwnerTest is Setup {
     }
 
     // ===============================================================
+    // setMinAmountToSell
+    // ===============================================================
+
+    function test_setMinAmountToSell(
+        uint256 _minAmountToSell
+    ) public {
+        vm.prank(management);
+        strategy.setMinAmountToSell(_minAmountToSell);
+
+        assertEq(strategy.minAmountToSell(), _minAmountToSell);
+    }
+
+    function test_setMinAmountToSell_wrongCaller(
+        address _wrongCaller
+    ) public {
+        vm.assume(_wrongCaller != management);
+
+        vm.prank(_wrongCaller);
+        vm.expectRevert("!management");
+        strategy.setMinAmountToSell(0);
+    }
+
+    // ===============================================================
     // setAuction
     // ===============================================================
 

@@ -197,6 +197,14 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
         minSwapInterval = _minSwapInterval;
     }
 
+    /// @notice Set the minimum amount of tokens to sell in a swap
+    /// @param _minAmountToSell Minimum amount of tokens needed to execute a swap
+    function setMinAmountToSell(
+        uint256 _minAmountToSell
+    ) external onlyManagement {
+        _setMinAmountToSell(_minAmountToSell);
+    }
+
     /// @notice Update the auction address
     /// @param _auction Address of new auction.
     function setAuction(
@@ -210,7 +218,7 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     /// @notice Rollover to a new Pendle market
     /// @dev Free all PT into Pendle token before updating market
     /// @dev Does not buy PT in the new market, that is done during tends
-    /// @dev To withdraw during rollover (while assets are in `pendleToken` and `pendleToken != asset`), 
+    /// @dev To withdraw during rollover (while assets are in `pendleToken` and `pendleToken != asset`),
     ///      `emergencyWithdraw` should be used, so before calling this function, make sure no depositor
     ///      wants to leave until after the rollover is complete
     /// @param _newMarket Address of the new Pendle market

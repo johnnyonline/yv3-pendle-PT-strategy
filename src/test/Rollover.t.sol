@@ -58,6 +58,10 @@ contract RolloverTest is Setup {
             )
         );
 
+        // Invalid pendleToken (not valid for SY)
+        vm.expectRevert("!pendleToken");
+        strategyFactory.newStrategy(address(asset), tokenAddrs["BOLD"], OLD_MARKET, ORACLE, "Tokenized Strategy");
+
         vm.startPrank(management);
         _strategy.acceptManagement();
         _strategy.setAllowed(user);
@@ -140,6 +144,15 @@ contract RolloverTest is Setup {
         assertEq(strategy.balanceOfPT(), 0, "!ptFinal");
         // assertEq(strategy.balanceOfPendleToken(), 0, "!pendleTokenFinal"); // IGNORED bc pendleToken is the same as asset
         assertGt(asset.balanceOf(address(strategy)), 0, "!assetFinal");
+    }
+
+    function test_rollover_wrongSY() public {
+        // Try to rollover to a market with different SY (cUSD market)
+        address wrongMarket = 0x307c15f808914Df5a5DbE17E5608f84953fFa023;
+
+        vm.prank(management);
+        vm.expectRevert("!newSY");
+        strategy.rollover(wrongMarket);
     }
 
 }
