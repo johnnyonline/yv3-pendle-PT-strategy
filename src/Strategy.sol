@@ -58,7 +58,7 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     IPendleOracle public immutable ORACLE;
 
     /// @notice Duration for TWAP calculations in the Pendle oracle
-    uint32 private TWAP_DURATION = 1800; // 30 minutes
+    uint32 private constant TWAP_DURATION = 1800; // 30 minutes
 
     /// @notice The WAD constant
     uint256 private constant _WAD = 1e18;
