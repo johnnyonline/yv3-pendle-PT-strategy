@@ -58,7 +58,7 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     IPendleOracle public immutable ORACLE;
 
     /// @notice Duration for TWAP calculations in the Pendle oracle
-    uint32 private constant TWAP_DURATION = 1800; // 30 minutes
+    uint32 private constant _TWAP_DURATION = 1800; // 30 minutes
 
     /// @notice The WAD constant
     uint256 private constant _WAD = 1e18;
@@ -246,14 +246,14 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     ) internal {
         // Check oracle is ready
         (bool _increaseCardinalityRequired,, bool _oldestObservationSatisfied) =
-            ORACLE.getOracleState(_market, TWAP_DURATION);
+            ORACLE.getOracleState(_market, _TWAP_DURATION);
 
         // If reverts, Call market.increaseObservationsCardinalityNext(cardinalityRequired) and wait
-        // for at least the `TWAP_DURATION` to allow data population.
+        // for at least the `_TWAP_DURATION` to allow data population.
         // On Ethereum, for twap duration of 1800 seconds, `cardinalityRequired` can be 165
         require(!_increaseCardinalityRequired, "increaseCardinalityRequired");
 
-        // Ser, wait for at least the `TWAP_DURATION` please
+        // Ser, wait for at least the `_TWAP_DURATION` please
         require(_oldestObservationSatisfied, "!oldestObservationNotSatisfied");
 
         // Get SY and PT tokens and validate the market
@@ -411,7 +411,7 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
         if (_amount == 0) return 0;
 
         // PT --> Pendle token (directly using SY rates)
-        uint256 _price = ORACLE.getPtToAssetRate(markets[address(principalToken)], TWAP_DURATION);
+        uint256 _price = ORACLE.getPtToAssetRate(markets[address(principalToken)], _TWAP_DURATION);
 
         return _amount * _price / _WAD;
     }
