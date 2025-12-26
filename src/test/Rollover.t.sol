@@ -48,7 +48,7 @@ contract RolloverTest is Setup {
         IPendleMarket(NEW_MARKET).increaseObservationsCardinalityNext(165);
 
         vm.prank(management);
-        strategy.allowWithdrawals();
+        strategy.allowWithdrawals(true);
     }
 
     function _setUpStrategy() internal returns (address) {

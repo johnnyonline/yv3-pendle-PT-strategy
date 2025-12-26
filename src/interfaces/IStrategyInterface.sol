@@ -46,7 +46,9 @@ interface IStrategyInterface is IStrategy {
     // Management functions
     // ===============================================================
 
-    function allowWithdrawals() external;
+    function allowWithdrawals(
+        bool _allowWithdrawals
+    ) external;
     function setAllowed(
         address _address
     ) external;

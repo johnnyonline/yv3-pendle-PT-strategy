@@ -37,9 +37,14 @@ contract OwnerTest is Setup {
         assertFalse(strategy.openWithdrawals());
 
         vm.prank(management);
-        strategy.allowWithdrawals();
+        strategy.allowWithdrawals(true);
 
         assertTrue(strategy.openWithdrawals());
+
+        vm.prank(management);
+        strategy.allowWithdrawals(false);
+
+        assertFalse(strategy.openWithdrawals());
     }
 
     function test_allowWithdrawals_wrongCaller(
@@ -49,7 +54,7 @@ contract OwnerTest is Setup {
 
         vm.prank(_wrongCaller);
         vm.expectRevert("!management");
-        strategy.allowWithdrawals();
+        strategy.allowWithdrawals(true);
     }
 
     // ===============================================================
@@ -269,7 +274,7 @@ contract OwnerTest is Setup {
         assertEq(strategy.availableWithdrawLimit(_owner), 0);
 
         vm.prank(management);
-        strategy.allowWithdrawals();
+        strategy.allowWithdrawals(true);
 
         assertEq(strategy.availableWithdrawLimit(_owner), type(uint256).max);
     }

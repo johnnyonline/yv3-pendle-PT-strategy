@@ -9,7 +9,7 @@ contract ShutdownTest is Setup {
         super.setUp();
 
         vm.prank(management);
-        strategy.allowWithdrawals();
+        strategy.allowWithdrawals(true);
     }
 
     function test_shutdownCanWithdraw(

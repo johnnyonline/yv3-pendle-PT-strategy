@@ -38,7 +38,7 @@ contract MockStrategyTest is Setup {
         vm.startPrank(management);
         strategy.acceptManagement();
         strategy.setAllowed(user);
-        strategy.allowWithdrawals();
+        strategy.allowWithdrawals(true);
         vm.stopPrank();
     }
 
