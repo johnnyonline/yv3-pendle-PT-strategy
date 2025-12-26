@@ -38,6 +38,13 @@ contract Setup is Test, IEvents {
     address public constant PT = 0x1F84a51296691320478c98b8d77f2Bbd17D34350;
     uint256 public constant EXPIRY = 1770249600;
 
+    // // USD3-MAINNET-JAN2026
+    // address public constant LP = 0xeaaC9B0B4F25cc63255198a3920FcF7752509586;
+    // address public constant SY = 0xA22d3605f843F34FC70cd91Fb0AF600a7359270a;
+    // address public constant YT = 0x8751E87931f084e5E83725110329cf7b27170f89;
+    // address public constant PT = 0xe39d1D3CAcEA800fD5aFB87dD98A42a8a364da08;
+    // uint256 public constant EXPIRY = 1769644800;
+
     // // USDE-MAINNET-SEP2025
     // address public constant LP = 0x6d98a2b6CDbF44939362a3E99793339Ba2016aF4;
     // address public constant SY = 0xf3DbdE762E5B67FaD09d88da3dfD38A83f753FFe;
@@ -99,7 +106,7 @@ contract Setup is Test, IEvents {
         _setTokenAddrs();
 
         // Set asset
-        asset = ERC20(tokenAddrs["USDe"]);
+        asset = ERC20(tokenAddrs["USD3"]);
 
         // Set decimals
         decimals = asset.decimals();
@@ -221,6 +228,7 @@ contract Setup is Test, IEvents {
         tokenAddrs["BOLD"] = 0x6440f144b7e50D6a8439336510312d2F54beB01D;
         tokenAddrs["yBOLD"] = 0x9F4330700a36B29952869fac9b33f45EEdd8A3d8;
         tokenAddrs["ysyBOLD"] = 0x23346B04a7f55b8760E5860AA5A77383D63491cD;
+        tokenAddrs["USD3"] = 0x056B269Eb1f75477a8666ae8C7fE01b64dD55eCc;
     }
 
 }
