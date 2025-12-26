@@ -38,6 +38,9 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     /// @notice Timestamp of the last swap
     uint256 public lastSwap;
 
+    /// @notice Slippage tolerance for Pendle token to PT swaps in basis points
+    uint256 public swapSlippageBPS;
+
     /// @notice Addresses allowed to deposit when openDeposits is false
     /// @dev Generally this strategy should be used by a single depositor only
     mapping(address => bool) public allowed;
@@ -98,6 +101,7 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
         // Set default values
         maxPendleTokenToSwap = type(uint256).max; // No limit by default
         minSwapInterval = type(uint256).max; // No automatic swapping by default
+        swapSlippageBPS = 50; // 0.5% slippage tolerance by default
 
         // Update market
         _updateMarket(_market);
@@ -198,6 +202,15 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
         uint256 _minSwapInterval
     ) external onlyManagement {
         minSwapInterval = _minSwapInterval;
+    }
+
+    /// @notice Set the acceptable slippage for Pendle token to PT swaps in basis points
+    /// @param _swapSlippageBPS Acceptable slippage in basis points
+    function setSwapSlippageBPS(
+        uint256 _swapSlippageBPS
+    ) external onlyManagement {
+        require(_swapSlippageBPS <= MAX_BPS, "!swapSlippageBPS");
+        swapSlippageBPS = _swapSlippageBPS;
     }
 
     /// @notice Set the minimum amount of tokens to sell in a swap
@@ -350,8 +363,14 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
         // Determine amount of Pendle token to swap to PT
         uint256 _amount = Math.min(balanceOfPendleToken(), maxPendleTokenToSwap);
 
+        // Calculate expected PT out (inverse of _PTInPendleToken)
+        uint256 _expectedAmountOut = _amount * _WAD / _PTInPendleToken(_WAD);
+
+        // Calculate minimum acceptable amount out of PT
+        uint256 _minAmountOut = _expectedAmountOut * (MAX_BPS - swapSlippageBPS) / MAX_BPS;
+
         // Pendle token --> PT
-        _pendleSwapFrom(address(PENDLE_TOKEN), address(principalToken), _amount, 0);
+        _pendleSwapFrom(address(PENDLE_TOKEN), address(principalToken), _amount, _minAmountOut);
     }
 
     /// @inheritdoc BaseStrategy

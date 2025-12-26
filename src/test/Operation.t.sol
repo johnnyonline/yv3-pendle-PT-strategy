@@ -30,6 +30,7 @@ contract OperationTest is Setup {
         assertEq(strategy.maxPendleTokenToSwap(), type(uint256).max);
         assertEq(strategy.minSwapInterval(), type(uint256).max);
         assertEq(strategy.lastSwap(), 0);
+        assertEq(strategy.swapSlippageBPS(), 50);
         assertEq(strategy.markets(address(PT)), LP);
         assertEq(strategy.principalToken(), PT);
         assertEq(strategy.SY(), SY);

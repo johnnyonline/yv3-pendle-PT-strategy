@@ -149,6 +149,41 @@ contract OwnerTest is Setup {
     }
 
     // ===============================================================
+    // setSwapSlippageBPS
+    // ===============================================================
+
+    function test_setSwapSlippageBPS(
+        uint256 _swapSlippageBPS
+    ) public {
+        vm.assume(_swapSlippageBPS <= MAX_BPS);
+
+        vm.prank(management);
+        strategy.setSwapSlippageBPS(_swapSlippageBPS);
+
+        assertEq(strategy.swapSlippageBPS(), _swapSlippageBPS);
+    }
+
+    function test_setSwapSlippageBPS_wrongCaller(
+        address _wrongCaller
+    ) public {
+        vm.assume(_wrongCaller != management);
+
+        vm.prank(_wrongCaller);
+        vm.expectRevert("!management");
+        strategy.setSwapSlippageBPS(0);
+    }
+
+    function test_setSwapSlippageBPS_tooHigh(
+        uint256 _swapSlippageBPS
+    ) public {
+        vm.assume(_swapSlippageBPS > MAX_BPS);
+
+        vm.prank(management);
+        vm.expectRevert("!swapSlippageBPS");
+        strategy.setSwapSlippageBPS(_swapSlippageBPS);
+    }
+
+    // ===============================================================
     // setAuction
     // ===============================================================
 

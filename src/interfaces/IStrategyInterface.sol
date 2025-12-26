@@ -15,6 +15,7 @@ interface IStrategyInterface is IStrategy {
     function minSwapInterval() external view returns (uint256);
     function minAmountToSell() external view returns (uint256);
     function lastSwap() external view returns (uint256);
+    function swapSlippageBPS() external view returns (uint256);
     function allowed(
         address
     ) external view returns (bool);
@@ -57,6 +58,9 @@ interface IStrategyInterface is IStrategy {
     ) external;
     function setMinAmountToSell(
         uint256 _minAmountToSell
+    ) external;
+    function setSwapSlippageBPS(
+        uint256 _swapSlippageBPS
     ) external;
     function setAuction(
         address _auction
