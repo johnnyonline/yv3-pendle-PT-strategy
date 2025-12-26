@@ -38,7 +38,7 @@ contract RolloverTest is Setup {
         // Mock oracle state to be ready
         vm.mockCall(ORACLE, abi.encodeWithSelector(IPendleOracle.getOracleState.selector), abi.encode(false, 165, true));
 
-        strategyFactory = new StrategyFactory(management, performanceFeeRecipient, keeper, emergencyAdmin);
+        strategyFactory = new StrategyFactory(management, performanceFeeRecipient, keeper, emergencyAdmin, gov);
 
         strategy = IStrategyInterface(_setUpStrategy());
 
@@ -85,7 +85,7 @@ contract RolloverTest is Setup {
         vm.clearMockedCalls();
 
         // Rollover to new market
-        vm.prank(management);
+        vm.prank(gov);
         strategy.rollover(NEW_MARKET);
 
         // PT should be converted to pendleToken
@@ -107,10 +107,10 @@ contract RolloverTest is Setup {
     function test_rollover_wrongCaller(
         address _wrongCaller
     ) public {
-        vm.assume(_wrongCaller != management);
+        vm.assume(_wrongCaller != gov);
 
         vm.prank(_wrongCaller);
-        vm.expectRevert("!management");
+        vm.expectRevert("!governance");
         strategy.rollover(NEW_MARKET);
     }
 
@@ -126,7 +126,7 @@ contract RolloverTest is Setup {
         vm.clearMockedCalls();
 
         // Rollover to new market (assets now in pendle token, not PT)
-        vm.prank(management);
+        vm.prank(gov);
         strategy.rollover(NEW_MARKET);
 
         assertEq(strategy.balanceOfPT(), 0, "!ptAfter");
@@ -156,14 +156,14 @@ contract RolloverTest is Setup {
         // Mock oracle state to be ready for wrong market
         vm.mockCall(ORACLE, abi.encodeWithSelector(IPendleOracle.getOracleState.selector), abi.encode(false, 165, true));
 
-        vm.prank(management);
+        vm.prank(gov);
         vm.expectRevert("!newSY");
         strategy.rollover(wrongMarket);
     }
 
     function test_rollover_notExpired() public {
         // Market is not expired (mock still active)
-        vm.prank(management);
+        vm.prank(gov);
         vm.expectRevert("!expired");
         strategy.rollover(NEW_MARKET);
     }
@@ -184,7 +184,7 @@ contract RolloverTest is Setup {
         strategy.setSwapSlippageBPS(0);
 
         // Rollover should go through bc we only redeem
-        vm.prank(management);
+        vm.prank(gov);
         strategy.rollover(NEW_MARKET);
     }
 

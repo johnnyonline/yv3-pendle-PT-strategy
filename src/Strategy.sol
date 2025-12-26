@@ -50,6 +50,9 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     // Constants
     // ===============================================================
 
+    /// @notice Governance address
+    address public immutable GOV;
+
     /// @notice The token used for entering/exiting Pendle markets
     /// @dev Must be supported by the Pendle market
     /// @dev Could be the same as `asset`
@@ -75,12 +78,14 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     /// @param _pendleToken The Pendle token used for entering/exiting the market
     /// @param _market The market address
     /// @param _oracle The pyYtLpOracle oracle address
+    /// @param _gov The governance address
     /// @param _name The name
     constructor(
         address _asset,
         address _pendleToken,
         address _market,
         address _oracle,
+        address _gov,
         string memory _name
     ) BaseHealthCheck(_asset, _name) {
         // Get `SY` and validate `pendleToken`
@@ -95,6 +100,9 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
 
         // Set oracle
         ORACLE = IPendleOracle(_oracle);
+
+        // Set governance
+        GOV = _gov;
 
         // Set Pendle token
         PENDLE_TOKEN = ERC20(_pendleToken);
@@ -234,13 +242,20 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
         auction = IAuction(_auction);
     }
 
+    // ===============================================================
+    // Governance functions
+    // ===============================================================
+
     /// @notice Rollover to a new Pendle market
     /// @dev Free all PT into Pendle token before updating market
     /// @dev Does not buy PT in the new market, that is done during tends
     /// @param _newMarket Address of the new Pendle market
     function rollover(
         address _newMarket
-    ) external onlyManagement {
+    ) external {
+        // Make sure caller is governance
+        require(msg.sender == GOV, "!governance");
+
         // Make sure market expired
         require(_isExpired(), "!expired");
 

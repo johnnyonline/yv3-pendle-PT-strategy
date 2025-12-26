@@ -28,8 +28,9 @@ contract MockStrategy is PendlePTStrategy {
         address _pendleToken,
         address _market,
         address _oracle,
+        address _gov,
         string memory _name
-    ) PendlePTStrategy(_asset, _pendleToken, _market, _oracle, _name) {}
+    ) PendlePTStrategy(_asset, _pendleToken, _market, _oracle, _gov, _name) {}
 
     /// @notice Convert ysyBOLD to yBOLD
     function _convertAssetToPendleToken(

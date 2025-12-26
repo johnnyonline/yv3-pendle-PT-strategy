@@ -80,6 +80,7 @@ contract Setup is Test, IEvents {
     address public management = address(1);
     address public performanceFeeRecipient = address(3);
     address public emergencyAdmin = address(5);
+    address public gov = address(6);
 
     // Address of the real deployed Factory
     address public factory;
@@ -106,12 +107,12 @@ contract Setup is Test, IEvents {
         _setTokenAddrs();
 
         // Set asset
-        asset = ERC20(tokenAddrs["USD3"]);
+        asset = ERC20(tokenAddrs["USDe"]);
 
         // Set decimals
         decimals = asset.decimals();
 
-        strategyFactory = new StrategyFactory(management, performanceFeeRecipient, keeper, emergencyAdmin);
+        strategyFactory = new StrategyFactory(management, performanceFeeRecipient, keeper, emergencyAdmin, gov);
 
         // Deploy strategy and set variables
         strategy = IStrategyInterface(setUpStrategy());

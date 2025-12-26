@@ -9,6 +9,7 @@ contract StrategyFactory {
     event NewStrategy(address indexed strategy, address indexed asset);
 
     address public immutable emergencyAdmin;
+    address public immutable gov;
 
     address public management;
     address public performanceFeeRecipient;
@@ -21,12 +22,14 @@ contract StrategyFactory {
         address _management,
         address _performanceFeeRecipient,
         address _keeper,
-        address _emergencyAdmin
+        address _emergencyAdmin,
+        address _gov
     ) {
         management = _management;
         performanceFeeRecipient = _performanceFeeRecipient;
         keeper = _keeper;
         emergencyAdmin = _emergencyAdmin;
+        gov = _gov;
     }
 
     /**
@@ -46,7 +49,7 @@ contract StrategyFactory {
     ) external virtual returns (address) {
         // tokenized strategies available setters.
         IStrategyInterface _newStrategy =
-            IStrategyInterface(address(new Strategy(_asset, _pendleToken, _market, _oracle, _name)));
+            IStrategyInterface(address(new Strategy(_asset, _pendleToken, _market, _oracle, gov, _name)));
 
         _newStrategy.setPerformanceFeeRecipient(performanceFeeRecipient);
 

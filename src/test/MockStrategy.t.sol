@@ -26,7 +26,7 @@ contract MockStrategyTest is Setup {
 
         // Deploy mock strategy
         MockStrategy _strategy =
-            new MockStrategy(address(asset), address(pendleToken), YBOLD_MARKET, ORACLE, "Tokenized Strategy");
+            new MockStrategy(address(asset), address(pendleToken), YBOLD_MARKET, ORACLE, gov, "Tokenized Strategy");
 
         strategy = IStrategyInterface(address(_strategy));
 

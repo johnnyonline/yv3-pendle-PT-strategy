@@ -24,6 +24,7 @@ interface IStrategyInterface is IStrategy {
     // Constants
     // ===============================================================
 
+    function GOV() external view returns (address);
     function PENDLE_TOKEN() external view returns (address);
     function SY() external view returns (address);
 
