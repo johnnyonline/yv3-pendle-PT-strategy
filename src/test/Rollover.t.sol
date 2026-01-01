@@ -168,24 +168,4 @@ contract RolloverTest is Setup {
         strategy.rollover(NEW_MARKET);
     }
 
-    function test_rollover_zeroSlippage(
-        uint256 _amount
-    ) public {
-        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
-
-        // Airdrop old PTs to strategy
-        airdrop(ERC20(oldPT), address(strategy), _amount);
-
-        // Clear mock to allow real expiry check
-        vm.clearMockedCalls();
-
-        // Set slippage to 0 (no tolerance)
-        vm.prank(management);
-        strategy.setSwapSlippageBPS(0);
-
-        // Rollover should go through bc we only redeem
-        vm.prank(gov);
-        strategy.rollover(NEW_MARKET);
-    }
-
 }

@@ -262,8 +262,14 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
         // Free all PT into Pendle token
         uint256 _toFree = balanceOfPT();
 
+        // Calculate expected Pendle token out
+        uint256 _expectedAmountOut = _PTInPendleToken(_toFree);
+
+        // Calculate minimum acceptable amount out of Pendle token
+        uint256 _minAmountOut = _expectedAmountOut * (MAX_BPS - swapSlippageBPS) / MAX_BPS;
+
         // PT --> Pendle token
-        _pendleSwapFrom(address(principalToken), address(PENDLE_TOKEN), _toFree, 0);
+        _pendleSwapFrom(address(principalToken), address(PENDLE_TOKEN), _toFree, _minAmountOut);
 
         // Update market
         _updateMarket(_newMarket);
