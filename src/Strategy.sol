@@ -377,7 +377,7 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     /// @inheritdoc BaseStrategy
     function _tend(
         uint256 _totalIdle
-    ) internal override {
+    ) internal virtual override {
         // Update last swap time
         lastSwap = block.timestamp;
 
@@ -398,7 +398,7 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     }
 
     /// @inheritdoc BaseStrategy
-    function _tendTrigger() internal view override returns (bool) {
+    function _tendTrigger() internal view virtual override returns (bool) {
         // Do nothing if strategy is shutdown
         if (TokenizedStrategy.isShutdown()) return false;
 
