@@ -27,6 +27,10 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     /// @notice Auction contract for selling rewards
     IAuction public auction;
 
+    /// @notice Minimum amount of Pendle tokens to trigger a tend
+    /// @dev Default is 0 (tend triggered based on `minAmountToSell` only)
+    uint256 public minPendleTokenToTrigger;
+
     /// @notice Maximum amount of Pendle tokens to swap for PT at once
     /// @dev Default is `type(uint256).max` (no limit)
     /// @dev Can be set to zero to disable swapping
@@ -198,6 +202,14 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
         allowed[_address] = true;
     }
 
+    /// @notice Set the minimum amount of Pendle tokens to trigger a tend
+    /// @param _minPendleTokenToTrigger Minimum amount of Pendle tokens to trigger
+    function setMinPendleTokenToTrigger(
+        uint256 _minPendleTokenToTrigger
+    ) external onlyManagement {
+        minPendleTokenToTrigger = _minPendleTokenToTrigger;
+    }
+
     /// @notice Set the maximum amount of Pendle tokens to swap for PT at once
     /// @dev Setting this to zero disables swapping
     /// @param _maxPendleTokenToSwap Maximum amount of Pendle tokens to swap at once
@@ -225,6 +237,7 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     }
 
     /// @notice Set the minimum amount of tokens to sell in a swap
+    /// @dev Should be used to avoid swapping dust amounts
     /// @param _minAmountToSell Minimum amount of tokens needed to execute a swap
     function setMinAmountToSell(
         uint256 _minAmountToSell
@@ -414,8 +427,14 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
         // Do nothing if if not enough time passed since last swap
         if (block.timestamp - lastSwap < minSwapInterval) return false;
 
+        // Cache Pendle token balance
+        uint256 _balanceOfPendleToken = balanceOfPendleToken();
+
         // Do nothing if not enough Pendle tokens to swap
-        if (balanceOfPendleToken() < minAmountToSell) return false;
+        if (_balanceOfPendleToken < minAmountToSell) return false;
+
+        // Do nothing if not enough Pendle tokens to trigger
+        if (_balanceOfPendleToken < minPendleTokenToTrigger) return false;
 
         // Otherwise, swap ahead!
         return true;

@@ -11,6 +11,7 @@ interface IStrategyInterface is IStrategy {
     function openWithdrawals() external view returns (bool);
     function principalToken() external view returns (address);
     function auction() external view returns (address);
+    function minPendleTokenToTrigger() external view returns (uint256);
     function maxPendleTokenToSwap() external view returns (uint256);
     function minSwapInterval() external view returns (uint256);
     function minAmountToSell() external view returns (uint256);
@@ -52,6 +53,9 @@ interface IStrategyInterface is IStrategy {
     ) external;
     function setAllowed(
         address _address
+    ) external;
+    function setMinPendleTokenToTrigger(
+        uint256 _minPendleTokenToTrigger
     ) external;
     function setMaxPendleTokenToSwap(
         uint256 _maxPendleTokenToSwap

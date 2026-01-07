@@ -85,6 +85,29 @@ contract OwnerTest is Setup {
     }
 
     // ===============================================================
+    // setMinPendleTokenToTrigger
+    // ===============================================================
+
+    function test_setMinPendleTokenToTrigger(
+        uint256 _minPendleTokenToTrigger
+    ) public {
+        vm.prank(management);
+        strategy.setMinPendleTokenToTrigger(_minPendleTokenToTrigger);
+
+        assertEq(strategy.minPendleTokenToTrigger(), _minPendleTokenToTrigger);
+    }
+
+    function test_setMinPendleTokenToTrigger_wrongCaller(
+        address _wrongCaller
+    ) public {
+        vm.assume(_wrongCaller != management);
+
+        vm.prank(_wrongCaller);
+        vm.expectRevert("!management");
+        strategy.setMinPendleTokenToTrigger(0);
+    }
+
+    // ===============================================================
     // setMaxPendleTokenToSwap
     // ===============================================================
 
