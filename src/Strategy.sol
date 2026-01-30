@@ -185,7 +185,6 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     // ===============================================================
 
     /// @notice Allow anyone to withdraw before expiry
-    /// @dev This is irreversible
     function allowWithdrawals(
         bool _allowWithdrawals
     ) external onlyManagement {
