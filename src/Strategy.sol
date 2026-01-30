@@ -378,8 +378,11 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
 
     /// @inheritdoc BaseStrategy
     function _harvestAndReport() internal view override returns (uint256 _totalAssets) {
-        // Total Pendle token value (balance + PT value)
-        uint256 _totalPendleToken = balanceOfPendleToken() + _PTInPendleToken(balanceOfPT());
+        // PT value in Pendle token (will add idle Pendle token balance separately below if needed)
+        uint256 _totalPendleToken = _PTInPendleToken(balanceOfPT());
+
+        // Only add Pendle token balance if asset != PENDLE_TOKEN
+        if (address(asset) != address(PENDLE_TOKEN)) _totalPendleToken += balanceOfPendleToken();
 
         // Total assets = asset balance + Pendle token and PT value in asset
         return asset.balanceOf(address(this)) + _pendleTokenInAsset(_totalPendleToken);

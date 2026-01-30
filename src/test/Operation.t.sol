@@ -111,6 +111,50 @@ contract OperationTest is Setup {
         assertApproxEqRel(asset.balanceOf(user), balanceBefore + _amount, MAX_LOSS, "!final balance");
     }
 
+    function test_operation_reportWithIdlePendleTokenProfit(
+        uint256 _amount
+    ) public {
+        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
+
+        // Deposit into strategy
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        assertEq(strategy.totalAssets(), _amount, "!totalAssets");
+        console2.log("strategy.totalAssets():", strategy.totalAssets());
+
+        // Tend to buy PT
+        vm.prank(keeper);
+        strategy.tend();
+
+        uint256 toAirdrop = _amount / 100;
+
+        // Airdrop some strategy.PENDLE_TOKEN() to strategy to simulate idle Pendle tokens
+        airdrop(ERC20(strategy.PENDLE_TOKEN()), address(strategy), toAirdrop);
+
+        // Report profit
+        vm.prank(keeper);
+        (uint256 profit, uint256 loss) = strategy.report();
+        console2.log("strategy.totalAssets():", strategy.totalAssets());
+
+        // Make sure profit is not more than `toAirdrop`
+        assertLe(profit, toAirdrop, "!profit too high");
+
+        // Check return Values
+        assertGe(profit, 0, "!profit");
+        assertEq(loss, 0, "!loss");
+
+        skip(strategy.profitMaxUnlockTime());
+
+        uint256 balanceBefore = asset.balanceOf(user);
+
+        // Withdraw all funds
+        vm.prank(user);
+        strategy.redeem(_amount, user, user);
+
+        // Make sure user did not lose more than max
+        assertApproxEqRel(asset.balanceOf(user), balanceBefore + _amount, MAX_LOSS, "!final balance");
+    }
+
     function test_operation_withdrawAfterExpiry(
         uint256 _amount
     ) public {
