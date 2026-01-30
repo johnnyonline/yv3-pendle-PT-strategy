@@ -131,26 +131,26 @@ contract OwnerTest is Setup {
     }
 
     // ===============================================================
-    // setMinSwapInterval
+    // setMinTendInterval
     // ===============================================================
 
-    function test_setMinSwapInterval(
-        uint256 _minSwapInterval
+    function test_setMinTendInterval(
+        uint256 _minTendInterval
     ) public {
         vm.prank(management);
-        strategy.setMinSwapInterval(_minSwapInterval);
+        strategy.setMinTendInterval(_minTendInterval);
 
-        assertEq(strategy.minSwapInterval(), _minSwapInterval);
+        assertEq(strategy.minTendInterval(), _minTendInterval);
     }
 
-    function test_setMinSwapInterval_wrongCaller(
+    function test_setMinTendInterval_wrongCaller(
         address _wrongCaller
     ) public {
         vm.assume(_wrongCaller != management);
 
         vm.prank(_wrongCaller);
         vm.expectRevert("!management");
-        strategy.setMinSwapInterval(0);
+        strategy.setMinTendInterval(0);
     }
 
     // ===============================================================

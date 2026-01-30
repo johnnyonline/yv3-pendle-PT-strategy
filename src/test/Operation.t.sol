@@ -28,8 +28,8 @@ contract OperationTest is Setup {
         assertTrue(strategy.openWithdrawals()); // Open on setUp
         assertTrue(strategy.auction() == address(0));
         assertEq(strategy.maxPendleTokenToSwap(), type(uint256).max);
-        assertEq(strategy.minSwapInterval(), type(uint256).max);
-        assertEq(strategy.lastSwap(), 0);
+        assertEq(strategy.minTendInterval(), type(uint256).max);
+        assertEq(strategy.lastTend(), 0);
         assertEq(strategy.swapSlippageBPS(), 50);
         assertEq(strategy.markets(address(PT)), LP);
         assertEq(strategy.principalToken(), PT);
@@ -221,7 +221,7 @@ contract OperationTest is Setup {
         assertEq(strategy.balanceOfPT(), 0, "!balanceOfPT");
         assertEq(strategy.balanceOfPendleToken(), _amount, "!balanceOfPendleToken");
 
-        // Tend does nothing other than updating lastSwap
+        // Tend does nothing other than updating lastTend
         vm.prank(keeper);
         strategy.tend();
 
@@ -229,8 +229,8 @@ contract OperationTest is Setup {
         assertEq(strategy.balanceOfPT(), 0, "!balanceOfPT");
         assertEq(strategy.balanceOfPendleToken(), _amount, "!balanceOfPendleToken");
 
-        // Check lastSwap updated
-        assertEq(strategy.lastSwap(), block.timestamp, "!lastSwap");
+        // Check lastTend updated
+        assertEq(strategy.lastTend(), block.timestamp, "!lastTend");
     }
 
     function test_tend_noSwapAfterExpiry(
@@ -408,7 +408,7 @@ contract OperationTest is Setup {
 
         // Setup: enable tend trigger
         vm.startPrank(management);
-        strategy.setMinSwapInterval(0);
+        strategy.setMinTendInterval(0);
         vm.stopPrank();
 
         // Deposit
@@ -434,7 +434,7 @@ contract OperationTest is Setup {
 
         // Setup: enable tend trigger
         vm.prank(management);
-        strategy.setMinSwapInterval(0);
+        strategy.setMinTendInterval(0);
 
         // Deposit
         mintAndDepositIntoStrategy(strategy, user, _amount);
@@ -458,7 +458,7 @@ contract OperationTest is Setup {
 
         // Setup: enable tend trigger but disable swap
         vm.startPrank(management);
-        strategy.setMinSwapInterval(0);
+        strategy.setMinTendInterval(0);
         strategy.setMaxPendleTokenToSwap(0);
         vm.stopPrank();
 
@@ -477,18 +477,18 @@ contract OperationTest is Setup {
 
         // Setup: enable tend trigger with interval
         vm.startPrank(management);
-        strategy.setMinSwapInterval(1 days);
+        strategy.setMinTendInterval(1 days);
         strategy.setMaxPendleTokenToSwap(_amount / 2);
         vm.stopPrank();
 
         // Deposit
         mintAndDepositIntoStrategy(strategy, user, _amount);
 
-        // Trigger should be true (lastSwap is 0)
+        // Trigger should be true (lastTend is 0)
         (bool trigger,) = strategy.tendTrigger();
         assertTrue(trigger);
 
-        // Tend to update lastSwap
+        // Tend to update lastTend
         vm.prank(keeper);
         strategy.tend();
 
@@ -510,7 +510,7 @@ contract OperationTest is Setup {
     function test_tendTrigger_returnsFalse_whenNoFunds() public {
         // Setup: enable tend trigger
         vm.prank(management);
-        strategy.setMinSwapInterval(0);
+        strategy.setMinTendInterval(0);
 
         // No deposit, no funds
         (bool trigger,) = strategy.tendTrigger();
@@ -524,7 +524,7 @@ contract OperationTest is Setup {
 
         // Setup: enable tend trigger
         vm.prank(management);
-        strategy.setMinSwapInterval(0);
+        strategy.setMinTendInterval(0);
 
         // Deposit
         mintAndDepositIntoStrategy(strategy, user, _amount);
@@ -541,7 +541,7 @@ contract OperationTest is Setup {
 
         // Setup: enable tend trigger
         vm.prank(management);
-        strategy.setMinSwapInterval(0);
+        strategy.setMinTendInterval(0);
 
         // Set minAmountToSell to be greater than deposit amount
         vm.prank(management);

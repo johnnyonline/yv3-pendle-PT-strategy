@@ -35,12 +35,12 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     /// @dev Can be set to zero to disable swapping
     uint256 public maxPendleTokenToSwap;
 
-    /// @notice Minimum time between swaps
-    /// @dev Default is `type(uint256).max` (automatic swapping disabled)
-    uint256 public minSwapInterval;
+    /// @notice Minimum time between tends
+    /// @dev Default is `type(uint256).max` (tending is disabled)
+    uint256 public minTendInterval;
 
-    /// @notice Timestamp of the last swap
-    uint256 public lastSwap;
+    /// @notice Timestamp of the last tend
+    uint256 public lastTend;
 
     /// @notice Slippage tolerance for Pendle token to PT swaps in basis points
     uint256 public swapSlippageBPS;
@@ -112,7 +112,7 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
 
         // Set default values
         maxPendleTokenToSwap = type(uint256).max; // No limit by default
-        minSwapInterval = type(uint256).max; // No automatic swapping by default
+        minTendInterval = type(uint256).max; // Tending is disabled by default
         swapSlippageBPS = 50; // 0.5% slippage tolerance by default
 
         // Update market
@@ -217,12 +217,12 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
         maxPendleTokenToSwap = _maxPendleTokenToSwap;
     }
 
-    /// @notice Set the minimum time between swaps
-    /// @param _minSwapInterval Minimum seconds between swaps
-    function setMinSwapInterval(
-        uint256 _minSwapInterval
+    /// @notice Set the minimum time between tends
+    /// @param _minTendInterval Minimum seconds between tends
+    function setMinTendInterval(
+        uint256 _minTendInterval
     ) external onlyManagement {
-        minSwapInterval = _minSwapInterval;
+        minTendInterval = _minTendInterval;
     }
 
     /// @notice Set the acceptable slippage for Pendle token to PT swaps in basis points
@@ -392,8 +392,8 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     function _tend(
         uint256 _totalIdle
     ) internal virtual override {
-        // Update last swap time
-        lastSwap = block.timestamp;
+        // Update last tend time
+        lastTend = block.timestamp;
 
         // Asset --> Pendle token
         _convertAssetToPendleToken(_totalIdle);
@@ -425,8 +425,8 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
         // Do nothing if swap is disabled
         if (maxPendleTokenToSwap == 0) return false;
 
-        // Do nothing if not enough time passed since last swap
-        if (block.timestamp - lastSwap < minSwapInterval) return false;
+        // Do nothing if not enough time passed since last tend
+        if (block.timestamp - lastTend < minTendInterval) return false;
 
         // Cache Pendle token balance
         uint256 _balanceOfPendleToken = balanceOfPendleToken();
@@ -437,7 +437,7 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
         // Do nothing if not enough Pendle tokens to trigger
         if (_balanceOfPendleToken < minPendleTokenToTrigger) return false;
 
-        // Otherwise, swap ahead!
+        // Otherwise, tend ahead!
         return true;
     }
 
