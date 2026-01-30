@@ -422,7 +422,7 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
         // Do nothing if swap is disabled
         if (maxPendleTokenToSwap == 0) return false;
 
-        // Do nothing if if not enough time passed since last swap
+        // Do nothing if not enough time passed since last swap
         if (block.timestamp - lastSwap < minSwapInterval) return false;
 
         // Cache Pendle token balance
