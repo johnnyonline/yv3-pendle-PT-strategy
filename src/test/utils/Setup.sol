@@ -196,13 +196,13 @@ contract Setup is Test, IEvents {
         uint16 _protocolFee,
         uint16 _performanceFee
     ) public {
-        address gov = IFactory(factory).governance();
+        address _gov = IFactory(factory).governance();
 
         // Need to make sure there is a protocol fee recipient to set the fee.
-        vm.prank(gov);
-        IFactory(factory).set_protocol_fee_recipient(gov);
+        vm.prank(_gov);
+        IFactory(factory).set_protocol_fee_recipient(_gov);
 
-        vm.prank(gov);
+        vm.prank(_gov);
         IFactory(factory).set_protocol_fee_bps(_protocolFee);
 
         vm.prank(management);

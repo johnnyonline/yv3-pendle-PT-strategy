@@ -45,7 +45,7 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     /// @notice Slippage tolerance for Pendle token to PT swaps in basis points
     uint256 public swapSlippageBPS;
 
-    /// @notice Addresses allowed to deposit when openDeposits is false
+    /// @notice Addresses allowed to deposit
     /// @dev Generally this strategy should be used by a single depositor only
     mapping(address => bool) public allowed;
 
