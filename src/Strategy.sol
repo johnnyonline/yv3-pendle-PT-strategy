@@ -68,10 +68,10 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     IPendleOracle public immutable ORACLE;
 
     /// @notice Duration for TWAP calculations in the Pendle oracle
-    uint32 private constant _TWAP_DURATION = 1800; // 30 minutes
+    uint32 internal constant _TWAP_DURATION = 1800; // 30 minutes
 
     /// @notice The WAD constant
-    uint256 private constant _WAD = 1e18;
+    uint256 internal constant _WAD = 1e18;
 
     // ===============================================================
     // Constructor
@@ -465,11 +465,12 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     /// @notice Price PT in Pendle token
     /// @dev `_price` is always in WAD format
     /// @dev `pendleToken` must be SY's underlying asset for this to work
+    /// @dev Can override if any of the above conditions do not hold
     /// @param _amount Amount of PT to price
     /// @return Amount of Pendle token equivalent
     function _PTInPendleToken(
         uint256 _amount
-    ) internal view returns (uint256) {
+    ) internal view virtual returns (uint256) {
         if (_amount == 0) return 0;
 
         // PT --> Pendle token (directly using SY rates)

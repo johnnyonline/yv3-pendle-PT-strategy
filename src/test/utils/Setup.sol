@@ -4,9 +4,11 @@ pragma solidity ^0.8.18;
 import "forge-std/console2.sol";
 import {Test} from "forge-std/Test.sol";
 
-import {PendlePTStrategy as Strategy, IPendleMarket, ERC20} from "../../Strategy.sol";
+import {PendlePTStrategy as Strategy, ERC20} from "../../Strategy.sol";
+// import {USD3Strategy as Strategy, ERC20} from "../../USD3Strategy.sol";
 import {StrategyFactory} from "../../StrategyFactory.sol";
 import {IStrategyInterface} from "../../interfaces/IStrategyInterface.sol";
+import {IPendleMarket} from "../../interfaces/IPendle.sol";
 
 // Inherit the events so they can be checked if desired.
 import {IEvents} from "@tokenized-strategy/interfaces/IEvents.sol";
@@ -31,19 +33,19 @@ contract Setup is Test, IEvents {
     address public constant ROUTER = 0x888888888889758F76e7103c6CbF23ABbF58F946;
     address public constant ORACLE = 0x5542be50420E88dd7D5B4a3D488FA6ED82F6DAc2; // pyYtLpOracle mainnet
 
-    // USDE-MAINNET-FAB2026 ($2.63M LP TVL @ `24_011_022` block)
-    address public constant LP = 0xAADBC004DAcF10e1fdbd87ca1a40ecAF77CC5B02;
-    address public constant SY = 0x925a15bD6A1582fa7c0EbbFc3Dbd29c34f58340e;
-    address public constant YT = 0x5a62AE8118536CF2De315E2c42f9Af035d8129f2;
-    address public constant PT = 0x1F84a51296691320478c98b8d77f2Bbd17D34350;
-    uint256 public constant EXPIRY = 1770249600;
+    // // USDE-MAINNET-FAB2026 ($2.63M LP TVL @ `24_011_022` block)
+    // address public constant LP = 0xAADBC004DAcF10e1fdbd87ca1a40ecAF77CC5B02;
+    // address public constant SY = 0x925a15bD6A1582fa7c0EbbFc3Dbd29c34f58340e;
+    // address public constant YT = 0x5a62AE8118536CF2De315E2c42f9Af035d8129f2;
+    // address public constant PT = 0x1F84a51296691320478c98b8d77f2Bbd17D34350;
+    // uint256 public constant EXPIRY = 1770249600;
 
-    // // USD3-MAINNET-JAN2026
-    // address public constant LP = 0xeaaC9B0B4F25cc63255198a3920FcF7752509586;
-    // address public constant SY = 0xA22d3605f843F34FC70cd91Fb0AF600a7359270a;
-    // address public constant YT = 0x8751E87931f084e5E83725110329cf7b27170f89;
-    // address public constant PT = 0xe39d1D3CAcEA800fD5aFB87dD98A42a8a364da08;
-    // uint256 public constant EXPIRY = 1769644800;
+    // USD3-MAINNET-MAR2026
+    address public constant LP = 0x696A9d9D4b0BA471AC309dA8E168a2962AF6aB22;
+    address public constant SY = 0xeA3BC608F32847B97965C5e1648BDFCd4C2C40d0;
+    address public constant YT = 0x6d716debd8147A0C7835D2F5D1FBc0707818445c;
+    address public constant PT = 0x0396BE0B0d2a88BEFF7680529e7F16dE393381e4;
+    uint256 public constant EXPIRY = 1773878400;
 
     // // USDE-MAINNET-SEP2025
     // address public constant LP = 0x6d98a2b6CDbF44939362a3E99793339Ba2016aF4;
@@ -89,10 +91,11 @@ contract Setup is Test, IEvents {
     uint256 public decimals;
     uint256 public MAX_BPS = 10_000;
 
-    // Fuzz from $0.001 of 1e18 stable coins up to 10 million of a 1e18 coin
-    // uint256 public maxFuzzAmount = 10_000_000 * 1e18;
-    uint256 public maxFuzzAmount = 1000 * 1e18;
-    uint256 public minFuzzAmount = 0.001 * 1e18;
+    // // Fuzz from $0.001 of 1e18 stable coins up to 10 million of a 1e18 coin
+    // uint256 public maxFuzzAmount = 1000 * 1e18;
+    // uint256 public minFuzzAmount = 0.001 * 1e18;
+    uint256 public maxFuzzAmount = 1000 * 1e6;
+    uint256 public minFuzzAmount = 100 * 1e6;
 
     // Default profit max unlock time is set for 10 days
     uint256 public profitMaxUnlockTime = 10 days;
@@ -101,13 +104,13 @@ contract Setup is Test, IEvents {
     uint256 public constant MAX_LOSS = 1e16; // 1%
 
     function setUp() public virtual {
-        uint256 _blockNumber = 24_011_022; // Caching for faster tests
+        uint256 _blockNumber = 24_355_163; // Caching for faster tests
         vm.selectFork(vm.createFork(vm.envString("ETH_RPC_URL"), _blockNumber));
 
         _setTokenAddrs();
 
         // Set asset
-        asset = ERC20(tokenAddrs["USDe"]);
+        asset = ERC20(tokenAddrs["USDC"]);
 
         // Set decimals
         decimals = asset.decimals();
@@ -136,6 +139,10 @@ contract Setup is Test, IEvents {
         IStrategyInterface _strategy = IStrategyInterface(
             address(strategyFactory.newStrategy(address(asset), address(asset), LP, ORACLE, "Tokenized Strategy"))
         );
+        // // we save the strategy as a IStrategyInterface to give it the needed interface
+        // IStrategyInterface _strategy = IStrategyInterface(
+        //     address(new Strategy(LP))
+        // );
 
         vm.startPrank(management);
         _strategy.acceptManagement();

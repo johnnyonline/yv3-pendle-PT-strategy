@@ -40,6 +40,10 @@ contract MockStrategyTest is Setup {
         strategy.setAllowed(user);
         strategy.allowWithdrawals(true);
         vm.stopPrank();
+
+        // Set fuzz amounts
+        maxFuzzAmount = 1000 * 1e18;
+        minFuzzAmount = 0.001 * 1e18;
     }
 
     function test_setupMockStrategyOK() public view {

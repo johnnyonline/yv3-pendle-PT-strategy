@@ -49,6 +49,10 @@ contract RolloverTest is Setup {
 
         vm.prank(management);
         strategy.allowWithdrawals(true);
+
+        // Set fuzz amounts
+        maxFuzzAmount = 1000 * 1e18;
+        minFuzzAmount = 0.001 * 1e18;
     }
 
     function _setUpStrategy() internal returns (address) {
