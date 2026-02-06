@@ -45,6 +45,9 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     /// @notice Slippage tolerance for Pendle token to PT swaps in basis points
     uint256 public swapSlippageBPS;
 
+    /// @notice Discount for reporting Pendle token value in basis points
+    uint256 public pendleTokenDiscountBPS;
+
     /// @notice Addresses allowed to deposit
     /// @dev Generally this strategy should be used by a single depositor only
     mapping(address => bool) public allowed;
@@ -114,6 +117,7 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
         maxPendleTokenToSwap = type(uint256).max; // No limit by default
         minTendInterval = type(uint256).max; // Tending is disabled by default
         swapSlippageBPS = 50; // 0.5% slippage tolerance by default
+        pendleTokenDiscountBPS = 0; // No discount by default
 
         // Update market
         _updateMarket(_market);
@@ -232,6 +236,15 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
     ) external onlyManagement {
         require(_swapSlippageBPS <= MAX_BPS, "!swapSlippageBPS");
         swapSlippageBPS = _swapSlippageBPS;
+    }
+
+    /// @notice Set the discount for reporting Pendle token value in basis points
+    /// @param _pendleTokenDiscountBPS Discount in basis points
+    function setPendleTokenDiscountBPS(
+        uint256 _pendleTokenDiscountBPS
+    ) external onlyManagement {
+        require(_pendleTokenDiscountBPS <= MAX_BPS, "!pendleTokenDiscountBPS");
+        pendleTokenDiscountBPS = _pendleTokenDiscountBPS;
     }
 
     /// @notice Set the minimum amount of tokens to sell in a swap
@@ -384,8 +397,9 @@ contract PendlePTStrategy is PendleSwapper, BaseHealthCheck {
         // Only add Pendle token balance if asset != PENDLE_TOKEN
         if (address(asset) != address(PENDLE_TOKEN)) _totalPendleToken += balanceOfPendleToken();
 
-        // Total assets = asset balance + Pendle token and PT value in asset
-        return asset.balanceOf(address(this)) + _pendleTokenInAsset(_totalPendleToken);
+        // Total assets = asset balance + Pendle token and PT value in asset (minus an optional discount)
+        return asset.balanceOf(address(this)) + _pendleTokenInAsset(_totalPendleToken)
+            * (MAX_BPS - pendleTokenDiscountBPS) / MAX_BPS;
     }
 
     /// @inheritdoc BaseStrategy

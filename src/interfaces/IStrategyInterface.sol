@@ -17,6 +17,7 @@ interface IStrategyInterface is IStrategy {
     function minAmountToSell() external view returns (uint256);
     function lastTend() external view returns (uint256);
     function swapSlippageBPS() external view returns (uint256);
+    function pendleTokenDiscountBPS() external view returns (uint256);
     function allowed(
         address
     ) external view returns (bool);
@@ -48,6 +49,9 @@ interface IStrategyInterface is IStrategy {
     // Management functions
     // ===============================================================
 
+    function setDoHealthCheck(
+        bool _doHealthCheck
+    ) external;
     function allowWithdrawals(
         bool _allowWithdrawals
     ) external;
@@ -68,6 +72,9 @@ interface IStrategyInterface is IStrategy {
     ) external;
     function setSwapSlippageBPS(
         uint256 _swapSlippageBPS
+    ) external;
+    function setPendleTokenDiscountBPS(
+        uint256 _pendleTokenDiscountBPS
     ) external;
     function setAuction(
         address _auction

@@ -212,6 +212,41 @@ contract OwnerTest is Setup {
     }
 
     // ===============================================================
+    // setPendleTokenDiscountBPS
+    // ===============================================================
+
+    function test_setPendleTokenDiscountBPS(
+        uint256 _pendleTokenDiscountBPS
+    ) public {
+        vm.assume(_pendleTokenDiscountBPS <= MAX_BPS);
+
+        vm.prank(management);
+        strategy.setPendleTokenDiscountBPS(_pendleTokenDiscountBPS);
+
+        assertEq(strategy.pendleTokenDiscountBPS(), _pendleTokenDiscountBPS);
+    }
+
+    function test_setPendleTokenDiscountBPS_wrongCaller(
+        address _wrongCaller
+    ) public {
+        vm.assume(_wrongCaller != management);
+
+        vm.prank(_wrongCaller);
+        vm.expectRevert("!management");
+        strategy.setPendleTokenDiscountBPS(0);
+    }
+
+    function test_setPendleTokenDiscountBPS_tooHigh(
+        uint256 _pendleTokenDiscountBPS
+    ) public {
+        vm.assume(_pendleTokenDiscountBPS > MAX_BPS);
+
+        vm.prank(management);
+        vm.expectRevert("!pendleTokenDiscountBPS");
+        strategy.setPendleTokenDiscountBPS(_pendleTokenDiscountBPS);
+    }
+
+    // ===============================================================
     // setAuction
     // ===============================================================
 

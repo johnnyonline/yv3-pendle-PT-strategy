@@ -29,21 +29,22 @@ contract Deploy is Script {
     address private constant ORACLE = 0x5542be50420E88dd7D5B4a3D488FA6ED82F6DAc2; // pyYtLpOracle mainnet
 
     function run() external {
-
         uint256 _privateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
         address _deployer = vm.addr(_privateKey);
         require(_deployer == DEPLOYER, "!deployer");
 
         vm.startBroadcast(_privateKey);
 
-        address _strategy = address(new Strategy(
-            USDC, // asset
-            USDC, // pendleToken
-            LP, // market
-            ORACLE, // oracle
-            CHAD, // gov
-            "USD3 Pendle PT Maxi" // name
-        ));
+        address _strategy = address(
+            new Strategy(
+                USDC, // asset
+                USDC, // pendleToken
+                LP, // market
+                ORACLE, // oracle
+                CHAD, // gov
+                "USD3 Pendle PT Maxi" // name
+            )
+        );
 
         IStrategyInterface strategy = IStrategyInterface(_strategy);
         strategy.setMinTendInterval(1 days);

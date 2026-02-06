@@ -555,4 +555,55 @@ contract OperationTest is Setup {
         assertFalse(trigger);
     }
 
+    function test_pendleTokenDiscountBPS_appliesDiscount(
+        uint256 _amount
+    ) public {
+        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
+
+        // Deposit into strategy
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        // Tend to buy PT
+        vm.prank(keeper);
+        strategy.tend();
+
+        // Skip some time to accrue yield
+        skip(10 days);
+
+        // Report to update totalAssets
+        vm.prank(keeper);
+        strategy.report();
+
+        skip(strategy.profitMaxUnlockTime());
+
+        // Get total assets before discount
+        uint256 totalAssetsBefore = strategy.totalAssets();
+
+        // Disable health check so report doesn't revert due to loss
+        vm.prank(management);
+        strategy.setDoHealthCheck(false);
+
+        // Set a 5% discount
+        uint256 discountBPS = 500; // 5%
+        vm.prank(management);
+        strategy.setPendleTokenDiscountBPS(discountBPS);
+
+        // Report to update totalAssets with the discount
+        vm.prank(keeper);
+        strategy.report();
+
+        // Get total assets after discount
+        uint256 totalAssetsAfter = strategy.totalAssets();
+
+        // Total assets should be lower after discount
+        assertLt(totalAssetsAfter, totalAssetsBefore, "!discount not applied");
+
+        // Calculate expected discounted amount
+        uint256 expectedDiscount = totalAssetsBefore * discountBPS / MAX_BPS;
+        uint256 actualDiscount = totalAssetsBefore - totalAssetsAfter;
+
+        // The actual discount should be close to the expected discount
+        assertApproxEqRel(actualDiscount, expectedDiscount, 0.05e18, "!discount amount"); // 5%
+    }
+
 }
