@@ -104,7 +104,7 @@ contract Setup is Test, IEvents {
     uint256 public constant MAX_LOSS = 1e16; // 1%
 
     function setUp() public virtual {
-        uint256 _blockNumber = 24_355_163; // Caching for faster tests
+        uint256 _blockNumber = 24_486_708; // Caching for faster tests
         vm.selectFork(vm.createFork(vm.envString("ETH_RPC_URL"), _blockNumber));
 
         _setTokenAddrs();
