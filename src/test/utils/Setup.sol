@@ -4,14 +4,39 @@ pragma solidity ^0.8.18;
 import "forge-std/console2.sol";
 import {Test} from "forge-std/Test.sol";
 
-import {PendlePTStrategy as Strategy, ERC20} from "../../Strategy.sol";
+// import {PendlePTStrategy as Strategy, ERC20} from "../../Strategy.sol";
 // import {USD3Strategy as Strategy, ERC20} from "../../USD3Strategy.sol";
+import {MetaExchangeStrategy as Strategy, ERC20} from "../../MetaExchangeStrategy.sol";
 import {StrategyFactory} from "../../StrategyFactory.sol";
 import {IStrategyInterface} from "../../interfaces/IStrategyInterface.sol";
 import {IPendleMarket} from "../../interfaces/IPendle.sol";
+import {UsdsExchange} from "../../periphery/UsdsExchange.sol";
 
 // Inherit the events so they can be checked if desired.
 import {IEvents} from "@tokenized-strategy/interfaces/IEvents.sol";
+
+interface IMetaExchangeAdmin {
+
+    struct RouteStep {
+        address exchange;
+        address tokenFrom;
+        address tokenTo;
+    }
+
+    function governance() external view returns (address);
+
+    function setAllowedExchange(
+        address exchange,
+        bool allowed
+    ) external;
+
+    function setRoute(
+        address from,
+        address to,
+        RouteStep[] calldata route
+    ) external;
+
+}
 
 interface IFactory {
 
@@ -32,6 +57,7 @@ contract Setup is Test, IEvents {
     // Contract addresses.
     address public constant ROUTER = 0x888888888889758F76e7103c6CbF23ABbF58F946;
     address public constant ORACLE = 0x5542be50420E88dd7D5B4a3D488FA6ED82F6DAc2; // pyYtLpOracle mainnet
+    address public constant META_EXCHANGE = 0x3E7A91F87c1b6C9D8FA806235fd69Aa0D7577caA;
 
     // // USDE-MAINNET-FAB2026 ($2.63M LP TVL @ `24_011_022` block)
     // address public constant LP = 0xAADBC004DAcF10e1fdbd87ca1a40ecAF77CC5B02;
@@ -40,12 +66,19 @@ contract Setup is Test, IEvents {
     // address public constant PT = 0x1F84a51296691320478c98b8d77f2Bbd17D34350;
     // uint256 public constant EXPIRY = 1770249600;
 
-    // USD3-MAINNET-MAR2026
-    address public constant LP = 0x696A9d9D4b0BA471AC309dA8E168a2962AF6aB22;
-    address public constant SY = 0xeA3BC608F32847B97965C5e1648BDFCd4C2C40d0;
-    address public constant YT = 0x6d716debd8147A0C7835D2F5D1FBc0707818445c;
-    address public constant PT = 0x0396BE0B0d2a88BEFF7680529e7F16dE393381e4;
-    uint256 public constant EXPIRY = 1773878400;
+    // // USD3-MAINNET-MAR2026
+    // address public constant LP = 0x696A9d9D4b0BA471AC309dA8E168a2962AF6aB22;
+    // address public constant SY = 0xeA3BC608F32847B97965C5e1648BDFCd4C2C40d0;
+    // address public constant YT = 0x6d716debd8147A0C7835D2F5D1FBc0707818445c;
+    // address public constant PT = 0x0396BE0B0d2a88BEFF7680529e7F16dE393381e4;
+    // uint256 public constant EXPIRY = 1773878400;
+
+    // SUSDS-MAINNET-NOV2026
+    address public constant LP = 0x9C560eBaF78e596cbcC27411d633a74D628dd7dC;
+    address public constant SY = 0xBe3d4ec488A0a042BB86F9176C24f8CD54018BA7;
+    address public constant YT = 0xC7B8551C6B286Ce0b44952320e940Bd3Dee58A09;
+    address public constant PT = 0xdC169AbE56461A2E0c034Da431Ac2a3ebf596094;
+    uint256 public constant EXPIRY = 1795651200;
 
     // // USDE-MAINNET-SEP2025
     // address public constant LP = 0x6d98a2b6CDbF44939362a3E99793339Ba2016aF4;
@@ -104,7 +137,7 @@ contract Setup is Test, IEvents {
     uint256 public constant MAX_LOSS = 1e16; // 1%
 
     function setUp() public virtual {
-        uint256 _blockNumber = 24_486_708; // Caching for faster tests
+        uint256 _blockNumber = 25_275_714; // Caching for faster tests
         vm.selectFork(vm.createFork(vm.envString("ETH_RPC_URL"), _blockNumber));
 
         _setTokenAddrs();
@@ -117,13 +150,17 @@ contract Setup is Test, IEvents {
 
         strategyFactory = new StrategyFactory(management, performanceFeeRecipient, keeper, emergencyAdmin, gov);
 
+        // Initialize the oracle observations cardinality for the market used in tests
+        // Must happen before deploy: the strategy constructor reverts if cardinality is insufficient
+        IPendleMarket(LP).increaseObservationsCardinalityNext(165);
+
+        // Register the USDC <-> USDS venue on the MetaExchange so the strategy can route swaps
+        _setUpExchange();
+
         // Deploy strategy and set variables
         strategy = IStrategyInterface(setUpStrategy());
 
         factory = strategy.FACTORY();
-
-        // Initialize the oracle observations cardinality for the market used in tests
-        IPendleMarket(LP).increaseObservationsCardinalityNext(165);
 
         // label all the used addresses for traces
         vm.label(keeper, "keeper");
@@ -134,15 +171,39 @@ contract Setup is Test, IEvents {
         vm.label(performanceFeeRecipient, "performanceFeeRecipient");
     }
 
+    function _setUpExchange() internal {
+        // Deploy the USDC <-> USDS venue (LitePSM + DAI/USDS converter)
+        UsdsExchange _exchange = new UsdsExchange();
+
+        IMetaExchangeAdmin.RouteStep[] memory _usdcToUsds = new IMetaExchangeAdmin.RouteStep[](1);
+        _usdcToUsds[0] = IMetaExchangeAdmin.RouteStep({
+            exchange: address(_exchange), tokenFrom: tokenAddrs["USDC"], tokenTo: tokenAddrs["USDS"]
+        });
+
+        IMetaExchangeAdmin.RouteStep[] memory _usdsToUsdc = new IMetaExchangeAdmin.RouteStep[](1);
+        _usdsToUsdc[0] = IMetaExchangeAdmin.RouteStep({
+            exchange: address(_exchange), tokenFrom: tokenAddrs["USDS"], tokenTo: tokenAddrs["USDC"]
+        });
+
+        // Governance allows the venue and sets both route directions
+        address _gov = IMetaExchangeAdmin(META_EXCHANGE).governance();
+        vm.startPrank(_gov);
+        IMetaExchangeAdmin(META_EXCHANGE).setAllowedExchange(address(_exchange), true);
+        IMetaExchangeAdmin(META_EXCHANGE).setRoute(tokenAddrs["USDC"], tokenAddrs["USDS"], _usdcToUsds);
+        IMetaExchangeAdmin(META_EXCHANGE).setRoute(tokenAddrs["USDS"], tokenAddrs["USDC"], _usdsToUsdc);
+        vm.stopPrank();
+    }
+
     function setUpStrategy() public returns (address) {
         // we save the strategy as a IStrategyInterface to give it the needed interface
-        IStrategyInterface _strategy = IStrategyInterface(
-            address(strategyFactory.newStrategy(address(asset), address(asset), LP, ORACLE, "Tokenized Strategy"))
-        );
-        // // we save the strategy as a IStrategyInterface to give it the needed interface
-        // IStrategyInterface _strategy = IStrategyInterface(
-        //     address(new Strategy(LP))
-        // );
+        IStrategyInterface _strategy =
+            IStrategyInterface(address(new Strategy(address(asset), tokenAddrs["USDS"], LP, "Tokenized Strategy")));
+
+        // Wire up roles (the StrategyFactory does this for the base strategy)
+        _strategy.setPerformanceFeeRecipient(performanceFeeRecipient);
+        _strategy.setKeeper(keeper);
+        _strategy.setPendingManagement(management);
+        _strategy.setEmergencyAdmin(emergencyAdmin);
 
         vm.startPrank(management);
         _strategy.acceptManagement();
@@ -237,6 +298,7 @@ contract Setup is Test, IEvents {
         tokenAddrs["yBOLD"] = 0x9F4330700a36B29952869fac9b33f45EEdd8A3d8;
         tokenAddrs["ysyBOLD"] = 0x23346B04a7f55b8760E5860AA5A77383D63491cD;
         tokenAddrs["USD3"] = 0x056B269Eb1f75477a8666ae8C7fE01b64dD55eCc;
+        tokenAddrs["USDS"] = 0xdC035D45d973E3EC169d2276DDab16f1e407384F;
     }
 
 }
