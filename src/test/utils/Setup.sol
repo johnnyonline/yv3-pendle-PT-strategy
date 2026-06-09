@@ -11,6 +11,7 @@ import {StrategyFactory} from "../../StrategyFactory.sol";
 import {IStrategyInterface} from "../../interfaces/IStrategyInterface.sol";
 import {IPendleMarket} from "../../interfaces/IPendle.sol";
 import {UsdsExchange} from "../../periphery/UsdsExchange.sol";
+import {IMorphoChainlinkOracleV2Factory} from "../../interfaces/IMorphoChainlinkOracleV2Factory.sol";
 
 // Inherit the events so they can be checked if desired.
 import {IEvents} from "@tokenized-strategy/interfaces/IEvents.sol";
@@ -58,6 +59,9 @@ contract Setup is Test, IEvents {
     address public constant ROUTER = 0x888888888889758F76e7103c6CbF23ABbF58F946;
     address public constant ORACLE = 0x5542be50420E88dd7D5B4a3D488FA6ED82F6DAc2; // pyYtLpOracle mainnet
     address public constant META_EXCHANGE = 0x3E7A91F87c1b6C9D8FA806235fd69Aa0D7577caA;
+    address public constant MORPHO_ORACLE_FACTORY = 0x3A7bB36Ee3f3eE32A60e9f2b33c1e5f2E83ad766;
+    address public constant USDC_USD_FEED = 0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6;
+    address public constant USDS_USD_FEED = 0xfF30586cD0F29eD462364C7e81375FC0C71219b1;
 
     // // USDE-MAINNET-FAB2026 ($2.63M LP TVL @ `24_011_022` block)
     // address public constant LP = 0xAADBC004DAcF10e1fdbd87ca1a40ecAF77CC5B02;
@@ -194,10 +198,32 @@ contract Setup is Test, IEvents {
         vm.stopPrank();
     }
 
+    function _setUpOracle() internal returns (address) {
+        // base = collateral = Pendle token (USDS, 18 dec); quote = loan = asset (USDC, 6 dec)
+        return IMorphoChainlinkOracleV2Factory(MORPHO_ORACLE_FACTORY)
+            .createMorphoChainlinkOracleV2(
+                address(0), // baseVault
+                1, // baseVaultConversionSample
+                USDS_USD_FEED, // baseFeed1
+                address(0), // baseFeed2
+                18, // baseTokenDecimals (USDS)
+                address(0), // quoteVault
+                1, // quoteVaultConversionSample
+                USDC_USD_FEED, // quoteFeed1
+                address(0), // quoteFeed2
+                6, // quoteTokenDecimals (USDC)
+                bytes32(0) // salt
+            );
+    }
+
     function setUpStrategy() public returns (address) {
+        // Deploy the Morpho oracle pricing the Pendle token (USDS) in asset (USDC) terms
+        address _oracle = _setUpOracle();
+
         // we save the strategy as a IStrategyInterface to give it the needed interface
-        IStrategyInterface _strategy =
-            IStrategyInterface(address(new Strategy(address(asset), tokenAddrs["USDS"], LP, "Tokenized Strategy")));
+        IStrategyInterface _strategy = IStrategyInterface(
+            address(new Strategy(address(asset), tokenAddrs["USDS"], LP, _oracle, "Tokenized Strategy"))
+        );
 
         // Wire up roles (the StrategyFactory does this for the base strategy)
         _strategy.setPerformanceFeeRecipient(performanceFeeRecipient);

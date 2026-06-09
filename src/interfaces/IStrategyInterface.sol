@@ -18,6 +18,7 @@ interface IStrategyInterface is IStrategy {
     function lastTend() external view returns (uint256);
     function swapSlippageBPS() external view returns (uint256);
     function pendleTokenDiscountBPS() external view returns (uint256);
+    function oracle() external view returns (address);
     function allowed(
         address
     ) external view returns (bool);
@@ -79,6 +80,9 @@ interface IStrategyInterface is IStrategy {
     ) external;
     function setAuction(
         address _auction
+    ) external;
+    function setOracle(
+        address _oracle
     ) external;
     function rollover(
         address _newMarket
