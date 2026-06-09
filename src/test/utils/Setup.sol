@@ -119,7 +119,7 @@ contract Setup is Test, IEvents {
     address public management = address(1);
     address public performanceFeeRecipient = address(3);
     address public emergencyAdmin = address(5);
-    address public gov = address(6);
+    address public gov = 0xFEB4acf3df3cDEA7399794D0869ef76A6EfAff52;
 
     // Address of the real deployed Factory
     address public factory;
@@ -222,14 +222,8 @@ contract Setup is Test, IEvents {
 
         // we save the strategy as a IStrategyInterface to give it the needed interface
         IStrategyInterface _strategy = IStrategyInterface(
-            address(new Strategy(address(asset), tokenAddrs["USDS"], LP, _oracle, "Tokenized Strategy"))
+            strategyFactory.newStrategy(address(asset), tokenAddrs["USDS"], LP, _oracle, "Tokenized Strategy")
         );
-
-        // Wire up roles (the StrategyFactory does this for the base strategy)
-        _strategy.setPerformanceFeeRecipient(performanceFeeRecipient);
-        _strategy.setKeeper(keeper);
-        _strategy.setPendingManagement(management);
-        _strategy.setEmergencyAdmin(emergencyAdmin);
 
         vm.startPrank(management);
         _strategy.acceptManagement();

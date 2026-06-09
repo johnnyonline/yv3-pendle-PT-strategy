@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.18;
 
-import {PendlePTStrategy as Strategy} from "./Strategy.sol";
+import {MetaExchangeStrategy as Strategy} from "./MetaExchangeStrategy.sol";
 import {IStrategyInterface} from "./interfaces/IStrategyInterface.sol";
 
 contract StrategyFactory {

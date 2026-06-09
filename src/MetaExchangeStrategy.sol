@@ -27,11 +27,7 @@ contract MetaExchangeStrategy is PendlePTStrategy {
     uint256 internal constant _ORACLE_PRICE_SCALE = 1e36;
 
     /// @notice Pendle's "pyYtLpOracle" Oracle on mainnet
-    address private constant _ORACLE = 0x5542be50420E88dd7D5B4a3D488FA6ED82F6DAc2;
-
-    /// @notice SMS address
-    /// @dev Used as the `GOV` address (only address that can call `rollover()`)
-    address private constant _SMS = 0x16388463d60FFE0661Cf7F1f31a7D658aC790ff7;
+    address internal constant _ORACLE = 0x5542be50420E88dd7D5B4a3D488FA6ED82F6DAc2;
 
     /// @notice The Meta Exchange contract
     IMetaExchange public constant META_EXCHANGE = IMetaExchange(0x3E7A91F87c1b6C9D8FA806235fd69Aa0D7577caA);
@@ -44,14 +40,16 @@ contract MetaExchangeStrategy is PendlePTStrategy {
     /// @param _pendleToken The Pendle token used for entering/exiting the market
     /// @param _market The market address
     /// @param _oracle The oracle pricing PENDLE_TOKEN in asset terms
+    /// @param _gov The governance address
     /// @param _name The name
     constructor(
         address _asset,
         address _pendleToken,
         address _market,
         address _oracle,
+        address _gov,
         string memory _name
-    ) PendlePTStrategy(_asset, _pendleToken, _market, _ORACLE, _SMS, _name) {
+    ) PendlePTStrategy(_asset, _pendleToken, _market, _ORACLE, _gov, _name) {
         // Set the oracle
         _setOracle(_oracle);
 
@@ -65,10 +63,12 @@ contract MetaExchangeStrategy is PendlePTStrategy {
     // ===============================================================
 
     /// @notice Set the oracle used to price Pendle token in asset terms
+    /// @dev Only callable by governance
     /// @param _oracle The new oracle address
     function setOracle(
         address _oracle
-    ) external onlyManagement {
+    ) external {
+        require(msg.sender == GOV, "!governance");
         _setOracle(_oracle);
     }
 
