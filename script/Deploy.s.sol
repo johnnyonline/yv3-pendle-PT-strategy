@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity 0.8.23;
 
+import {IPendleMarket} from "../src/interfaces/IPendle.sol";
 import {IStrategyInterface} from "../src/interfaces/IStrategyInterface.sol";
 
 import {PendlePTStrategy as Strategy} from "../src/Strategy.sol";
@@ -17,15 +18,16 @@ import "forge-std/Script.sol";
 contract Deploy is Script {
 
     address private constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
-    address private constant DEPLOYER = 0x285E3b1E82f74A99D07D2aD25e159E75382bB43B; // johnnyonline.eth
+    address private constant DEPLOYER = 0x420ACF637D662b80cca8bEfb327AA24039E7e0Fa; // johnnyonline.eth
     address private constant SMS = 0x16388463d60FFE0661Cf7F1f31a7D658aC790ff7; // sms mainnet
     address private constant KEEPER = 0x604e586F17cE106B64185A7a0d2c1Da5bAce711E; // yHaaS mainnet
     address private constant EMERGENCY_ADMIN = SMS;
     address private constant PERFORMANCE_FEE_RECIPIENT = 0x5A74Cb32D36f2f517DB6f7b0A0591e09b22cDE69; // Accountant mainnet
     address private constant CHAD = 0xFEB4acf3df3cDEA7399794D0869ef76A6EfAff52; // Chad mainnet
+    address private constant YVUSD = 0x696d02Db93291651ED510704c9b286841d506987;
 
-    // USD3-MAINNET-MAR2026
-    address public constant LP = 0x696A9d9D4b0BA471AC309dA8E168a2962AF6aB22;
+    // USD3-MAINNET-DEC2026
+    address public constant LP = 0x4A5067C3fF1abb7449244025B0e37fEAF77D8E3e;
     address private constant ORACLE = 0x5542be50420E88dd7D5B4a3D488FA6ED82F6DAc2; // pyYtLpOracle mainnet
 
     function run() external {
@@ -34,6 +36,9 @@ contract Deploy is Script {
         require(_deployer == DEPLOYER, "!deployer");
 
         vm.startBroadcast(_privateKey);
+
+        // Bump the Pendle oracle cardinality
+        IPendleMarket(LP).increaseObservationsCardinalityNext(165);
 
         address _strategy = address(
             new Strategy(
@@ -49,6 +54,7 @@ contract Deploy is Script {
         IStrategyInterface strategy = IStrategyInterface(_strategy);
         strategy.setMinTendInterval(1 days);
         strategy.setAllowed(_deployer);
+        strategy.setAllowed(YVUSD);
         strategy.setKeeper(KEEPER);
         strategy.setPerformanceFeeRecipient(PERFORMANCE_FEE_RECIPIENT);
         strategy.setEmergencyAdmin(EMERGENCY_ADMIN);
@@ -65,3 +71,6 @@ contract Deploy is Script {
 
 // USD3-MAINNET-MAR2026
 // Strategy deployed at:  0x4C0e4d3cB62B91afBbf1Fe8e830f98A513c7234b
+
+// USD3-MAINNET-DEC2026
+// Strategy deployed at:  0x62ebE2ca290DB3B649c390847f8204196771B438
