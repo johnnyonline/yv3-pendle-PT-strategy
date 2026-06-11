@@ -3,6 +3,8 @@ pragma solidity 0.8.23;
 
 import {IPendleMarket} from "../src/interfaces/IPendle.sol";
 import {IStrategyInterface} from "../src/interfaces/IStrategyInterface.sol";
+import {ICommonReportTrigger} from "../src/interfaces/ICommonReportTrigger.sol";
+import {IAprOracle} from "../src/interfaces/IAprOracle.sol";
 
 import {PendlePTStrategy as Strategy} from "../src/Strategy.sol";
 
@@ -25,6 +27,12 @@ contract Deploy is Script {
     address private constant PERFORMANCE_FEE_RECIPIENT = 0x5A74Cb32D36f2f517DB6f7b0A0591e09b22cDE69; // Accountant mainnet
     address private constant CHAD = 0xFEB4acf3df3cDEA7399794D0869ef76A6EfAff52; // Chad mainnet
     address private constant YVUSD = 0x696d02Db93291651ED510704c9b286841d506987;
+    address private constant PT_MAXI_APR_ORACLE = 0x7caD38C514eB1369AB5373F16D2fb469E1Fd544f;
+    address private constant FIXED_REPORT_TRIGGER = 0xb9F57B62Cbe9463da16E5b75e3B809321a0eA871;
+
+    ICommonReportTrigger private constant COMMON_REPORT_TRIGGER =
+        ICommonReportTrigger(0xf8dF17a35c88AbB25e83C92f9D293B4368b9D52D);
+    IAprOracle private constant CENTRAL_APR_ORACLE = IAprOracle(0x1981AD9F44F2EA9aDd2dC4AD7D075c102C70aF92);
 
     // USD3-MAINNET-DEC2026
     address public constant LP = 0x4A5067C3fF1abb7449244025B0e37fEAF77D8E3e;
@@ -59,6 +67,11 @@ contract Deploy is Script {
         strategy.setPerformanceFeeRecipient(PERFORMANCE_FEE_RECIPIENT);
         strategy.setEmergencyAdmin(EMERGENCY_ADMIN);
         strategy.setPendingManagement(SMS);
+        strategy.setMaxPendleTokenToSwap(25_000 * 1e6);
+        strategy.setMinTendInterval(1 days);
+
+        COMMON_REPORT_TRIGGER.setCustomStrategyTrigger(address(strategy), FIXED_REPORT_TRIGGER);
+        CENTRAL_APR_ORACLE.setOracle(address(strategy), PT_MAXI_APR_ORACLE);
 
         vm.stopBroadcast();
 
